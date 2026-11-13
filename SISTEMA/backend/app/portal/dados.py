@@ -67,7 +67,7 @@ def documento_valido(doc: str) -> bool:
 
 def _sync_cfg():
     from ..config import settings
-    base = (getattr(settings, 'SYNC_API_BASE', '') or 'https://sync.atendedireito.app/v1').rstrip('/')
+    base = (getattr(settings, 'SYNC_API_BASE', '') or 'https://api.sync.atendedireito.app/v1').rstrip('/')
     token = getattr(settings, 'SYNC_API_TOKEN', '') or ''
     return base, token
 

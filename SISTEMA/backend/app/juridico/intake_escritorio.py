@@ -183,7 +183,7 @@ def gerar_ficha(dados, destino):
     linhas += ['', 'DOCUMENTOS QUE FALTAM'] + ['- %s' % x for x in (dados.get('documentos_faltantes') or ['-'])]
     linhas += ['', 'Origem: %s | Indicação: %s' % (dados.get('origem') or '-', dados.get('indicante') or '-')]
     from .peca_engine import formatar_no_timbrado
-    return formatar_no_timbrado('\n'.join(l for l in linhas if l is not None), destino)
+    return formatar_no_timbrado('\n'.join(l for l in linhas if l is not None), destino, padrao='simples')
 
 
 def pendencias(docs):

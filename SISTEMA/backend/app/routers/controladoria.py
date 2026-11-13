@@ -29,7 +29,7 @@ router = APIRouter(prefix='/api/controladoria', tags=['controladoria'])
 
 
 def _base():
-    return (getattr(settings, 'SYNC_API_BASE', '') or 'https://sync.atendedireito.app/v1').rstrip('/')
+    return (getattr(settings, 'SYNC_API_BASE', '') or 'https://api.sync.atendedireito.app/v1').rstrip('/')
 
 
 def _headers():

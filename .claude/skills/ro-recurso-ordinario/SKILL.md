@@ -17,8 +17,9 @@ São duas partes.
 
 ## Antes de escrever
 1. Leia INTEIRO o `SISTEMA/backend/app/juridico/DNA_ESCRITORIO.md` (na raiz do repositório do sistema; no servidor, `$ESC_RAIZ/SISTEMA/backend/app/juridico/DNA_ESCRITORIO.md`).
-   Ele define a formatação, a abertura ("por suas advogadas"), os títulos DA/DO, o fecho
-   ("Termos em que, pede deferimento."), a cidade e data e o bloco de assinatura.
+   Ele define a formatação, a abertura ("por seus advogados"), os títulos DA/DO, o fecho
+   ("Termos em que, pede deferimento.") e o bloco de assinatura dos sócios, que o timbrado coloca
+   sozinho com "São Paulo, data do protocolo eletrônico."
 2. Leia todos os insumos da pasta do caso: autos, decisão, defesa e documentos. Imagem e PDF
    escaneado se leem por visão.
 

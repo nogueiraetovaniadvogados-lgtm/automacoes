@@ -1,64 +1,77 @@
-# DNA DAS PEÇAS — Escritório Modelo Advogados
+# DNA DAS PEÇAS — Nogueira & Tovani Advogados
 
-> **BASE VIRGEM.** Este arquivo traz o padrão herdado da base (estilo de peças trabalhistas).
-> Na instalação de um escritório novo, reescreva-o a partir de 5 a 10 peças reais DELE
-> (formatação, bloco de assinatura, endereçamento, tom) e preencha a seção 1 com os dados reais.
+> Padrão extraído do modelo do próprio escritório (`Y:\Modelos\Peças e Teses\Trabalhista\Peças -
+> Petições\Inicial - Esqueleto Reclamação Trabalhista.docx`) e do timbrado oficial
+> (`juridico/modelos/TIMBRADO.docx`).
 
 Todo prompt de produção e de revisão de peça lê este arquivo **antes** de escrever. Se ele mudar,
 as peças mudam junto.
 
 ## 1. Quem assina e em nome de quem
 
-- Sociedade: **NOME DA SOCIEDADE DE ADVOCACIA**, CNPJ 00.000.000/0000-00,
-  registro OAB/UF 00.000, com sede na Endereço do escritório, Cidade/UF,
-  CEP 00000-000 (é onde recebe as intimações).
-- Bloco de assinatura (sempre nesta ordem, uma linha por advogada, nome em CAIXA ALTA, travessão,
-  OAB):
+- Escritório: **Nogueira & Tovani Advogados**, Rua Antônio da Costa Dias, 311, Vila Friburgo,
+  São Paulo – SP, CEP 04782-050, fone 2712-9054 (é onde recebe as notificações e intimações).
+- Assinam os dois sócios, lado a lado (o sistema coloca o bloco sozinho depois do fecho):
   ```
-  NOME DA ADVOGADA – OAB/UF 000.000
+  THIAGO TOVANI                WAGNER NOGUEIRA DA SILVA
+  OAB/SP 299.424               OAB/SP 258.002
   ```
-- Quem revisa e protocola: **Dra. Advogada**. Ela também é a dona das tarefas.
-- Na qualificação o escritório fala "**por suas advogadas**", e não "por seus advogados". Use a
-  forma masculina só quando a peça já vier assim (razões finais antigas).
-- Local e data: a cidade da vara, por extenso, seguida de vírgula ("Cidade, 16 de junho de 2026.").
+- Publicações: sempre em nome de **THIAGO TOVANI, OAB/SP 299.424**.
+- Na qualificação o escritório fala "**devidamente representado por seus advogados** (instrumento
+  de mandato anexo) que abaixo subscrevem".
+- Local e data: **`São Paulo, data do protocolo eletrônico.`** (a peça é protocolada no PJe/e-SAJ;
+  data por extenso só em processo físico).
 
 ## 2. Formatação (igual em todas as peças)
 
-- Fonte **Century Gothic 12**, corpo **justificado**.
-- Recuo da primeira linha: **3 cm** nos parágrafos de texto. Endereçamento, títulos e assinatura
-  ficam sem recuo.
-- Títulos de tópico em **CAIXA ALTA e negrito**, sempre começando por "DA/DO/DAS/DOS"
-  ("DA DISPENSA DISCRIMINATÓRIA", "DO INTERVALO INTRAJORNADA").
+- Fonte **Times New Roman 12**, corpo **justificado**, entrelinha 1,5, sem espaço depois do
+  parágrafo e **uma linha em branco** entre parágrafos.
+- Recuo da primeira linha: **7 cm** nos parágrafos de texto (inclusive fecho e data).
+  Endereçamento, títulos e assinatura ficam sem recuo.
+- Endereçamento em **negrito**; depois dele, 9 linhas em branco (espaço do despacho) e o número do
+  processo — ou `Para distribuição` — em **negrito e sublinhado**.
+- Nome da ação (`RECLAMAÇÃO TRABALHISTA`, `RÉPLICA`, `RECURSO ORDINÁRIO`…), `PRELIMINAR` e
+  `MÉRITO`: linha própria, **centralizados, negrito e sublinhado**.
+- Títulos de tópico em **CAIXA ALTA, negrito e sublinhado**, sem recuo, sempre começando por
+  "DA/DO/DAS/DOS" ("DA COMPETÊNCIA", "DO INTERVALO INTRAJORNADA").
+- Jurisprudência: recuo esquerdo de 3 cm, fonte 10, entrelinha simples, com a referência do
+  julgado logo abaixo da ementa — "(TST - RR: …, Relator: …, Data de Julgamento: …, …ª Turma,
+  Data de Publicação: …)".
 - Citação de lei ou de súmula vai em parágrafo próprio, com o dispositivo antes e o texto entre
   aspas: `Art. 4º, caput, da CLT: "Considera-se como de serviço efetivo…"`.
 - Pedidos em lista com alíneas `a)`, `b)`, `c)`, cada uma terminando em ponto e vírgula e a última
   em ponto.
-- Contrato e procuração usam Century Gothic 10 e 12, sem recuo.
-- O papel é o **TIMBRADO.docx** (`juridico/modelos/`). A imagem fica no cabeçalho e o texto entra
-  no corpo. Nunca recrie o cabeçalho.
+- O papel é o **TIMBRADO.docx** (`juridico/modelos/`): logo Nogueira & Tovani no cabeçalho e
+  endereço no rodapé, A4. O texto entra no corpo. Nunca recrie o cabeçalho.
 
 ## 3. Endereçamento e abertura
 
-- Primeira instância: `AO JUÍZO DA 1ª VARA DO TRABALHO DE CIDADE – SP` (sem "EXCELENTÍSSIMO",
-  sem "MM.").
-- Logo abaixo: `Processo nº 0000000-00.0000.5.02.0000`.
-- Abertura padrão (manifestação no processo):
-  > {RECLAMANTE EM CAIXA ALTA}, nos autos da reclamação trabalhista que move em face de
-  > {RECLAMADA EM CAIXA ALTA}, por suas advogadas, vem respeitosamente perante Vossa Excelência,
-  > apresentar sua {NOME DA PEÇA EM CAIXA ALTA}, pelos motivos de fato e de direito a seguir
-  > expostos:
+- Primeira instância: `EXCELENTÍSSIMO JUÍZO DA __ª VARA DO TRABALHO DE SÃO PAULO – SP`.
+- Logo abaixo (depois do espaço do despacho): `Processo nº 0000000-00.0000.5.02.0000` ou, na
+  inicial, `Para distribuição`.
+- Abertura padrão (manifestação no processo) — nomes das partes em CAIXA ALTA:
+  > {CLIENTE}, já devidamente qualificado nos autos da reclamação trabalhista que move em face de
+  > {PARTE CONTRÁRIA}, igualmente qualificada, vem, respeitosamente, por seus advogados, à
+  > presença de Vossa Excelência, apresentar sua {NOME DA PEÇA}, pelos motivos de fato e de
+  > direito a seguir expostos:
 - Inicial: qualificação completa (nacionalidade, estado civil, profissão, RG, CPF, endereço com
-  CEP), "por suas advogadas, vem respeitosamente perante Vossa Excelência, com fundamento no art.
-  840, §1º da CLT, propor a presente", então `RECLAMAÇÃO TRABALHISTA` em linha própria e depois
-  "Em face de" com cada reclamada (razão social, CNPJ, sede).
+  CEP, CTPS e série, PIS), "devidamente representado por seus advogados (instrumento de mandato
+  anexo) que abaixo subscrevem, todos com escritório na Rua Antônio da Costa Dias, 311, Vila
+  Friburgo, São Paulo – SP, CEP 04782-050, onde deverão receber as notificações e intimações, vem,
+  respeitosamente, a presença de Vossa Excelência, propor", então `RECLAMAÇÃO TRABALHISTA` em
+  linha própria e depois, sem recuo, "pelo rito ordinário, em face de" + cada reclamada (razão
+  social, CNPJ, sede), "pelos fundamentos de fato e de direito a seguir expostos:".
+- Ordem da inicial: PRELIMINAR (ausência de passagem pela CCP, competência, justiça gratuita,
+  indicação de valores, juízo 100% digital) → MÉRITO (síntese fática e tópicos) → DOS PEDIDOS →
+  DOS REQUERIMENTOS FINAIS → DAS PUBLICAÇÕES → valor da causa → fecho.
 - Recursos: uma petição de interposição curta (fundamento, tempestividade, justiça gratuita,
-  pedido de remessa ao TRT da 2ª Região, fecho e assinatura) e depois as razões, com o cabeçalho:
+  pedido de remessa ao TRT da 2ª Região, fecho) e depois as razões, com o cabeçalho:
   ```
   EGRÉGIO TRIBUNAL REGIONAL DO TRABALHO DA 2ª REGIÃO
   RECORRENTE: …
   RECORRIDA: …
   PROCESSO Nº: …
-  ORIGEM: 1ª VARA DO TRABALHO DE CIDADE/SP
+  ORIGEM: __ª VARA DO TRABALHO DE SÃO PAULO/SP
   RAZÕES DE RECURSO ORDINÁRIO
   ```
   Nas contrarrazões entra também a saudação `EGRÉGIA TURMA,`.
@@ -67,9 +80,13 @@ as peças mudam junto.
 
 - Último tópico: `DOS PEDIDOS` (réplica, inicial, recursos) ou `DOS REQUERIMENTOS` /
   `DOS REQUERIMENTOS FINAIS` (embargos, razões finais).
-- Fórmula de fecho, sempre em linha própria: **`Termos em que, pede deferimento.`**
-- Depois vêm a cidade e a data, e por fim o bloco de assinatura do item 1.
-- Inicial: antes do fecho, `Dá-se a causa o valor de R$ … (por extenso).`
+- Inicial: antes do fecho, `DAS PUBLICAÇÕES` ("Requer que todas as publicações referentes ao
+  presente feito sejam feitas em nome de THIAGO TOVANI, inscrito na OAB/SP sob o nº 299.424, com
+  escritório na Rua Antônio da Costa Dias, 311, Vila Friburgo - São Paulo/SP - CEP: 04782-050, sob
+  pena de nulidade.") e `Dá-se à causa o valor de R$ … (por extenso).`
+- Fórmula de fecho: **`Termos em que, pede deferimento.`** — a IA para aqui. A linha
+  `São Paulo, data do protocolo eletrônico.` e o bloco de assinatura dos dois sócios o sistema
+  acrescenta.
 
 ## 5. Tom e construção do argumento
 

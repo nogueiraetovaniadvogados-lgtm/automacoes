@@ -26,7 +26,28 @@ import requests
 log = logging.getLogger('integracoes.meta_ads')
 
 BASE = 'https://graph.facebook.com/v21.0'
-CONTA_PADRAO = 'act_1301772877172525'          # CA01 - Escritório Modelo Anunciante
+
+
+def _conta_do_env():
+    """Conta de anuncios do escritorio: META_AD_ACCOUNT (ou META_ADS_ACCOUNT) no config/.env.
+
+    O modulo e importado antes de quem chama carregar o .env (campanhas.py so
+    carrega no _prep), entao le o arquivo aqui mesmo, sem sobrescrever o que ja
+    estiver no ambiente. Sem conta configurada, cai na conta antiga da base.
+    """
+    try:
+        from pathlib import Path
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).resolve().parents[1] / 'config' / '.env', override=False)
+    except Exception:
+        pass
+    acc = (os.getenv('META_AD_ACCOUNT') or os.getenv('META_ADS_ACCOUNT') or '').strip()
+    if not acc:
+        return 'act_1301772877172525'
+    return acc if acc.startswith('act_') else 'act_' + acc
+
+
+CONTA_PADRAO = _conta_do_env()                 # Ca 01 Civil (act_1352494608793230) via .env
 APP_ID = '1746103106581807'                     # Escritório Modelo Analytics
 
 # acao que representa "lead" real numa campanha de WhatsApp

@@ -84,7 +84,7 @@ DIAS_ANTES = 7
 
 PAPEL_PRODUCAO, PAPEL_TITULAR = 'revisora', 'titular'   # papeis (juridico/equipe.json)
 TASK_PREPARACAO = 'PREPARACAO PARA AUDIENCIA'
-SYNC = 'https://sync.atendedireito.app/v1'
+SYNC = (os.environ.get('SYNC_API_BASE') or 'https://api.sync.atendedireito.app/v1').rstrip('/')
 CNJ = re.compile(r'\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}')
 SEMANA = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira',
           'sexta-feira', 'sábado', 'domingo']

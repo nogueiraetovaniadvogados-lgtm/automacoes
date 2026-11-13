@@ -7,9 +7,10 @@ description: Redige a petição inicial trabalhista do reclamante (TRT-2) a part
 
 A estrutura segue a inicial-modelo descrita no DNA:
 1. qualificação completa do reclamante;
-2. "por suas advogadas ... com fundamento no art. 840, §1º da CLT, propor a presente";
+2. "devidamente representado por seus advogados (instrumento de mandato anexo) que abaixo
+   subscrevem, ... vem, respeitosamente, a presença de Vossa Excelência, propor";
 3. `RECLAMAÇÃO TRABALHISTA`;
-4. "Em face de", com cada reclamada;
+4. sem recuo, "pelo rito ordinário, em face de", com cada reclamada;
 5. tópicos preliminares cabíveis: grupo econômico, responsabilidade solidária ou subsidiária,
    JUÍZO 100% DIGITAL, segredo de justiça, justiça gratuita;
 6. mérito, um tópico por direito, cada um com fato, fundamento e pedido;
@@ -23,8 +24,9 @@ Os valores saem da skill `liquidacao-previa`.
 
 ## Antes de escrever
 1. Leia INTEIRO o `SISTEMA/backend/app/juridico/DNA_ESCRITORIO.md` (na raiz do repositório do sistema; no servidor, `$ESC_RAIZ/SISTEMA/backend/app/juridico/DNA_ESCRITORIO.md`).
-   Ele define a formatação, a abertura ("por suas advogadas"), os títulos DA/DO, o fecho
-   ("Termos em que, pede deferimento."), a cidade e data e o bloco de assinatura.
+   Ele define a formatação, a abertura ("por seus advogados"), os títulos DA/DO, o fecho
+   ("Termos em que, pede deferimento.") e o bloco de assinatura dos sócios, que o timbrado coloca
+   sozinho com "São Paulo, data do protocolo eletrônico."
 2. Leia todos os insumos da pasta do caso: autos, decisão, defesa e documentos. Imagem e PDF
    escaneado se leem por visão.
 
