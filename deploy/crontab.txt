@@ -69,6 +69,12 @@ ESC_CONFIG_ENV=/opt/escritorio/config/.env
 #10 7,13 * * 1-5  cd $R/SYNC && $PY tarefas_conferir.py >> /var/log/escritorio/tarefas-conferir.log 2>&1
 #*/5 7-20 * * 1-6  cd $R/SYNC && flock -n /tmp/esc-avisos.lock $PY avisos_agendados.py --enviar >> /var/log/escritorio/avisos-agendados.log 2>&1
 
+# ---------- ADVBOX -> INFINITUM (clientes, processos, lancamentos, andamentos) ----------
+# cria o que falta e atualiza o que mudou; nunca apaga. Andamentos: ultimos 15 dias.
+# DESLIGADO em 19/11/2026: os bancos do Infinitum mudaram de estrutura (cliente virou vinculo);
+# remapear SYNC/advbox_infinitum.py antes de religar.
+#30 4 * * *  cd $R && flock -n /tmp/esc-advbox-infinitum.lock $PY SYNC/advbox_infinitum.py --executar >> /var/log/escritorio/advbox-infinitum.log 2>&1
+
 # ---------- AGENDA / AUDIENCIAS ----------
 #50 6 * * *  cd $R/SISTEMA/backend && flock -n /tmp/esc-audiencias.lock $PY $R/audiencias_vigia.py --aplicar >> /var/log/escritorio/audiencias.log 2>&1
 #0 13 * * 5  cd $R/SISTEMA/backend && $PY $R/relatorio_audiencias_semana.py --enviar >> /var/log/escritorio/relatorio-audiencias.log 2>&1

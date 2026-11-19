@@ -272,7 +272,7 @@ table.t tbody tr:hover{background:var(--sup-3)}
 .ad .ct{padding:10px 12px;display:flex;flex-direction:column;gap:6px;flex:1}
 .ad .nm{font-weight:600;font-size:12.5px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ad .cp{color:var(--tx-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ad .mt{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:auto;padding-top:6px;border-top:1px solid var(--linha)}
+.ad .mt{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:auto;padding-top:6px;border-top:1px solid var(--linha)}
 .ad .mt div{font-size:10.5px;color:var(--tx-3)}
 .ad .mt b{display:block;font-size:12.5px;color:var(--tx)}
 .ad a{font-size:12px;font-weight:600;color:var(--marca);text-decoration:none}
@@ -961,12 +961,12 @@ R.marketing = function () {
   var per = [['today', 'Hoje'], ['yesterday', 'Ontem'], ['last_7d', '7 dias'], ['last_14d', '14 dias'], ['last_30d', '30 dias']];
   var cdh = S.campDash || {}, cl = cdh.campanhas || [], tt = cdh.total || {};
   var tabC = estado('campDash', 'Campanhas') || (cdh.erro ? '<div class="aviso">' + ic('alerta') + esc(cdh.erro) + '</div>' : (!cl.length ? '<div class="vazio">Nenhuma campanha ativa no período.</div>' :
-    '<div class="grade" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:16px">' + miniNum('Investido', brl(tt.gasto)) + miniNum('Conversas', num(tt.conversas)) + miniNum('Custo/conversa', brl(tt.custo_por_conversa)) + miniNum('Cliques', num(tt.cliques)) + miniNum('CTR', dec(tt.ctr, 2) + '%') + miniNum('CPC', brl(tt.cpc)) + '</div>' +
-    '<div class="tabela-wrap"><table class="t"><thead><tr><th>Campanha</th><th class="d">Investido</th><th class="d">Conversas</th><th class="d">Custo/conv.</th><th class="d">Impressões</th><th class="d">Cliques</th><th class="d">CTR</th></tr></thead><tbody>' +
+    '<div class="grade" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:16px">' + miniNum('Investido', brl(tt.gasto)) + miniNum('Conversas', num(tt.conversas)) + miniNum('Custo/conversa', brl(tt.custo_por_conversa)) + miniNum('Avançaram (3+ msgs)', num(tt.avancadas) + (tt.taxa_avanco != null ? ' · ' + dec(tt.taxa_avanco, 0) + '%' : '')) + miniNum('Custo/avançada', tt.custo_por_avancada != null ? brl(tt.custo_por_avancada) : '—') + miniNum('Cliques', num(tt.cliques)) + miniNum('CTR', dec(tt.ctr, 2) + '%') + miniNum('CPC', brl(tt.cpc)) + '</div>' +
+    '<div class="tabela-wrap"><table class="t"><thead><tr><th>Campanha</th><th class="d">Investido</th><th class="d">Conversas</th><th class="d">Custo/conv.</th><th class="d" title="Conversas em que a pessoa mandou 3 mensagens ou mais">Avançaram</th><th class="d">Custo/avançada</th><th class="d">Impressões</th><th class="d">Cliques</th><th class="d">CTR</th></tr></thead><tbody>' +
     cl.map(function (x) {
       var maxG = Math.max.apply(null, cl.map(function (y) { return y.gasto || 0; }).concat([1]));
       return '<tr><td><div style="font-weight:600">' + esc(x.nome) + '</div><div style="height:4px;border-radius:3px;background:var(--barra-fundo);margin-top:6px;max-width:260px"><div style="height:100%;width:' + (100 * (x.gasto || 0) / maxG) + '%;background:var(--serie-1);border-radius:3px"></div></div></td>' +
-        '<td class="d num">' + brl(x.gasto) + '</td><td class="d num">' + num(x.conversas) + '</td><td class="d num">' + (x.conversas ? brl(x.custo_por_conversa) : '—') + '</td><td class="d num">' + num(x.impressoes) + '</td><td class="d num">' + num(x.cliques) + '</td><td class="d num">' + dec(x.ctr, 2) + '%</td></tr>';
+        '<td class="d num">' + brl(x.gasto) + '</td><td class="d num">' + num(x.conversas) + '</td><td class="d num">' + (x.conversas ? brl(x.custo_por_conversa) : '—') + '</td><td class="d num">' + num(x.avancadas) + (x.conversas ? ' <span style="color:var(--tx-3)">(' + dec(100 * (x.avancadas || 0) / x.conversas, 0) + '%)</span>' : '') + '</td><td class="d num"><b>' + (x.custo_por_avancada != null ? brl(x.custo_por_avancada) : '—') + '</b></td><td class="d num">' + num(x.impressoes) + '</td><td class="d num">' + num(x.cliques) + '</td><td class="d num">' + dec(x.ctr, 2) + '%</td></tr>';
     }).join('') + '</tbody></table></div>'));
   h += '<div class="sec">' + cartao('Campanhas ativas', tabC, { acao: '<div class="chips">' + per.map(function (p) { return '<button class="chip' + (UI.campPer === p[0] ? ' on' : '') + '" data-campper="' + p[0] + '">' + p[1] + '</button>'; }).join('') + '</div>' }) + '</div>';
 
@@ -974,10 +974,10 @@ R.marketing = function () {
   var ad = S.anuncios || {}, al = (ad.anuncios || []).filter(function (a) { return a.conversas > 0; }).slice(0, 8);
   var adsHTML = estado('anuncios', 'Anúncios') || (!al.length ? '<div class="vazio">Nenhum anúncio com conversa no período.</div>' : '<div class="ads">' + al.map(function (a, i) {
     return '<div class="ad"><div class="img"' + (a.thumb ? ' style="background-image:url(\'' + esc(a.thumb) + '\')"' : '') + '><span class="rk">#' + (i + 1) + '</span>' + (a.thumb ? '' : '<span style="position:absolute;inset:0;display:grid;place-items:center;color:var(--tx-3)">' + ic('mkt', ' width="28" height="28"') + '</span>') + '</div><div class="ct"><div class="nm">' + esc(a.anuncio) + '</div><div class="cp">' + esc(a.campanha) + '</div>' +
-      '<div class="mt"><div>Custo/conv.<b class="num">' + (a.custo != null ? brl(a.custo) : '—') + '</b></div><div>Conversas<b class="num">' + num(a.conversas) + '</b></div><div>Investido<b class="num">' + brlK(a.gasto) + '</b></div></div>' +
+      '<div class="mt"><div>Custo/avançada<b class="num">' + (a.custo_avancada != null ? brl(a.custo_avancada) : '—') + '</b></div><div>Avançaram<b class="num">' + num(a.avancadas) + (a.taxa_avanco != null ? ' · ' + dec(a.taxa_avanco, 0) + '%' : '') + '</b></div><div>Custo/conv.<b class="num">' + (a.custo != null ? brl(a.custo) : '—') + '</b></div><div>Investido<b class="num">' + brlK(a.gasto) + '</b></div></div>' +
       '<div style="display:flex;gap:12px">' + (a.link ? '<a href="' + esc(a.link) + '" target="_blank" rel="noopener">Prévia</a>' : '') + (a.gerenciador ? '<a href="' + esc(a.gerenciador) + '" target="_blank" rel="noopener">Gerenciador</a>' : '') + '</div></div></div>';
   }).join('') + '</div>');
-  h += '<div class="sec">' + cartao('Anúncios mais baratos por conversa', adsHTML, { acao: '<div class="chips">' + [['last_7d', '7 dias'], ['last_14d', '14 dias'], ['last_30d', '30 dias']].map(function (p) { return '<button class="chip' + (UI.adsPer === p[0] ? ' on' : '') + '" data-adsper="' + p[0] + '">' + p[1] + '</button>'; }).join('') + '</div>' }) + '</div>';
+  h += '<div class="sec">' + cartao('Anúncios que trazem conversa de verdade · custo por conversa que avançou (3+ mensagens)', adsHTML, { acao: '<div class="chips">' + [['last_7d', '7 dias'], ['last_14d', '14 dias'], ['last_30d', '30 dias']].map(function (p) { return '<button class="chip' + (UI.adsPer === p[0] ? ' on' : '') + '" data-adsper="' + p[0] + '">' + p[1] + '</button>'; }).join('') + '</div>' }) + '</div>';
   return h;
 };
 

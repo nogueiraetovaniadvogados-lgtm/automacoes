@@ -43,7 +43,7 @@ CACHE = '/opt/escritorio/SYNC/comercial_painel_cache.json'
 ENV = '/opt/escritorio/config/.env'
 INTEGRACOES = '/opt/escritorio/INTEGRACOES'
 VALIDADE = 600                      # sistema juridico e Meta: no maximo 10 min
-INICIO = date.fromisoformat(os.getenv('COMERCIAL_INICIO', '2026-11-01'))   # comeco da serie do comercial
+INICIO = date.fromisoformat(os.getenv('COMERCIAL_INICIO') or '2026-11-01')   # comeco da serie do comercial
 PIPES_ESC = (10, 11, 18, 20, 31)    # Reclamantes, Clientes, Producao, Contratacao, Palestra (ver whatsapp/funis.py)
 # Duas vagas de vendedor, configuraveis no .env (a equipe pode comecar sem vendedor; as vagas ficam prontas)
 # Fonte unica: VENDEDORES="Nome:email:telefone:meta:9-18,..." (a mesma do SYNC/roteamento_vendedoras.py).
@@ -57,7 +57,7 @@ _E1 = (_VEND[0][1] if len(_VEND) > 0 and len(_VEND[0]) > 1 else os.getenv('COMER
 _E2 = (_VEND[1][1] if len(_VEND) > 1 and len(_VEND[1]) > 1 else os.getenv('COMERCIAL_VENDEDOR_2_EMAIL') or '')
 EMAIL_VENDEDORA = {e.strip().lower(): n for e, n in ((_E1, V1), (_E2, V2)) if e.strip()}
 TAXA_CONTRATO = {V1: 'com_v1', V2: 'com_v2'}
-MOEDAS_EQUIPE_INICIO = date.fromisoformat(os.getenv('MOEDAS_INICIO', '2026-11-01'))   # programa de moedas da equipe: conta a partir daqui
+MOEDAS_EQUIPE_INICIO = date.fromisoformat(os.getenv('MOEDAS_INICIO') or '2026-11-01')   # programa de moedas da equipe: conta a partir daqui
 MOEDAS_EQUIPE_VALOR = {'lig': 1, 'contrato': 10, 'dist': 20, 'manha': 3, 'dia': 5, 'seq3': 10, 'seq5': 25}
 MOEDAS_EQUIPE_NIVEIS = [(0, 'Bronze', 1.0), (300, 'Prata', 1.1), (500, 'Ouro', 1.25), (800, 'Diamante', 1.5)]
 MOEDAS_EQUIPE_PATAMARES = [(100, 'Pausa'), (300, 'Cuidado'), (700, 'Encontro'), (1500, 'Grande experiência')]   # trilha de recompensas

@@ -231,17 +231,18 @@ GERENCIADOR = ('https://adsmanager.facebook.com/adsmanager/manage/ads'
 
 
 def _detalhes_dos_anuncios(ids):
-    """Previa, miniatura e status de cada anuncio, em lote (ate 50 por chamada)."""
+    """Previa, miniatura e status de cada anuncio.
+
+    Um GET por anuncio: o parametro `ids` (varios objetos numa chamada) foi
+    descontinuado pelo Meta e passou a responder erro 500. A tela mostra poucos
+    anuncios e a resposta fica em cache, entao o custo e pequeno.
+    """
     det = {}
-    for i in range(0, len(ids), 50):
-        lote = [x for x in ids[i:i + 50] if x]
-        if not lote:
-            continue
-        r = meta._get('', {'ids': ','.join(lote),
-                           'fields': 'name,effective_status,preview_shareable_link,'
-                                     'creative{thumbnail_url,video_id}'})
-        if isinstance(r, dict):
-            det.update(r)
+    for aid in dict.fromkeys(x for x in ids if x):
+        r = meta._get(aid, {'fields': 'name,effective_status,preview_shareable_link,'
+                                      'creative{thumbnail_url,video_id}'})
+        if isinstance(r, dict) and r:
+            det[aid] = r
     return det
 
 
@@ -256,6 +257,7 @@ def _montar_anuncios(periodo: str):
     for r in rows:
         gasto = _brl(r.get('spend'))
         conv = meta.conversas(r.get('actions'))
+        av = meta.avancadas(r.get('actions'))
         if gasto <= 0 and conv == 0:
             continue
         aid = r.get('ad_id') or ''
@@ -272,21 +274,32 @@ def _montar_anuncios(periodo: str):
                       'thumb': cre.get('thumbnail_url') or '',
                       'gasto': gasto, 'conversas': conv,
                       'custo': round(gasto / conv, 2) if conv else None,
+                      'avancadas': av,
+                      'custo_avancada': round(gasto / av, 2) if av else None,
+                      'taxa_avanco': round(100 * av / conv, 1) if conv else None,
                       'cliques': int(r.get('clicks') or 0),
                       'ctr': _brl(r.get('ctr'))})
-    itens.sort(key=lambda x: (x['custo'] is None, x['custo'] or 0))
+    # ordena pelo custo da conversa que avancou: a conversa barata que morre na
+    # 1a mensagem engana. Com menos de 3 avancadas a amostra e acaso (1 conversa
+    # boa nao faz anuncio bom), entao esses vem depois; sem nenhuma, vao pro fim.
+    itens.sort(key=lambda x: (x['avancadas'] < 3, x['custo_avancada'] is None,
+                              x['custo_avancada'] or 0, x['custo'] is None, x['custo'] or 0))
     return {'periodo': periodo, 'anuncios': itens}
 
 
 def _montar_dashboard(periodo: str) -> dict:
     camps = meta.listar_campanhas(ativas=True)
     itens = []
-    total = {'gasto': 0.0, 'conversas': 0, 'impressoes': 0, 'alcance': 0, 'cliques': 0}
+    total = {'gasto': 0.0, 'conversas': 0, 'avancadas': 0, 'impressoes': 0, 'alcance': 0, 'cliques': 0}
     for c in camps:
         r = meta.resumo_campanha(c['id'], date_preset=periodo) or {}
+        if not r.get('gasto') and not r.get('conversas'):
+            continue  # "ativa" no Meta mas sem veicular (ex.: data de fim ja passou)
         r = {
             'gasto': r.get('gasto', 0), 'conversas': r.get('conversas', 0),
             'custo_por_conversa': r.get('custo_por_conversa', 0),
+            'avancadas': r.get('avancadas', 0),
+            'custo_por_avancada': r.get('custo_por_avancada'),
             'impressoes': r.get('impressoes', 0), 'alcance': r.get('alcance', 0),
             'cliques': r.get('cliques', 0), 'ctr': r.get('ctr', 0), 'cpc': r.get('cpc', 0),
             'id': c['id'], 'nome': c.get('name', ''),
@@ -295,11 +308,14 @@ def _montar_dashboard(periodo: str) -> dict:
         itens.append(r)
         total['gasto'] += r['gasto']
         total['conversas'] += r['conversas']
+        total['avancadas'] += r['avancadas']
         total['impressoes'] += r['impressoes']
         total['alcance'] += r['alcance']
         total['cliques'] += r['cliques']
     total['gasto'] = round(total['gasto'], 2)
     total['custo_por_conversa'] = round(total['gasto'] / total['conversas'], 2) if total['conversas'] else 0
+    total['custo_por_avancada'] = round(total['gasto'] / total['avancadas'], 2) if total['avancadas'] else None
+    total['taxa_avanco'] = round(100 * total['avancadas'] / total['conversas'], 1) if total['conversas'] else None
     total['ctr'] = round(total['cliques'] / total['impressoes'] * 100, 2) if total['impressoes'] else 0
     total['cpc'] = round(total['gasto'] / total['cliques'], 2) if total['cliques'] else 0
     itens.sort(key=lambda x: x['gasto'], reverse=True)
@@ -325,8 +341,8 @@ def _montar_serie(dias: int) -> dict:
 @router.get('/visao')
 async def visao(user: Usuario = Depends(usuario_atual)):
     _prep()
-    if not meta.get_token():
-        return {'erro': 'META_ADS_TOKEN ausente no config/.env', 'crm': _crm()}
+    if meta.faltando():
+        return {'erro': meta.faltando(), 'crm': _crm()}
     return await asyncio.to_thread(_cacheado, 'visao', _montar_visao)
 
 
@@ -335,8 +351,8 @@ async def anuncios(periodo: str = Query('last_7d'), user: Usuario = Depends(usua
     _prep()
     if periodo not in PERIODOS:
         periodo = 'last_7d'
-    if not meta.get_token():
-        return {'periodo': periodo, 'anuncios': [], 'erro': 'META_ADS_TOKEN ausente no config/.env'}
+    if meta.faltando():
+        return {'periodo': periodo, 'anuncios': [], 'erro': meta.faltando()}
     return await asyncio.to_thread(_cacheado, 'ads:' + periodo,
                                    lambda: _montar_anuncios(periodo))
 
@@ -346,14 +362,14 @@ async def dashboard(periodo: str = Query('today'), user: Usuario = Depends(usuar
     _prep()
     if periodo not in PERIODOS:
         periodo = 'today'
-    if not meta.get_token():
-        return {'periodo': periodo, 'campanhas': [], 'total': {}, 'erro': 'META_ADS_TOKEN ausente no config/.env'}
+    if meta.faltando():
+        return {'periodo': periodo, 'campanhas': [], 'total': {}, 'erro': meta.faltando()}
     return await asyncio.to_thread(_montar_dashboard, periodo)
 
 
 @router.get('/serie')
 async def serie(dias: int = Query(14), user: Usuario = Depends(usuario_atual)):
     _prep()
-    if not meta.get_token():
+    if meta.faltando():
         return {'serie': []}
     return await asyncio.to_thread(_montar_serie, dias)

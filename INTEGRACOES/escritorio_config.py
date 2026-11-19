@@ -40,6 +40,14 @@ def _arquivo():
     return _CACHE
 
 
+def carregar_env():
+    """Leva o config/.env para os.environ sem sobrescrever o que ja existe.
+    Dispensa o python-dotenv (CLIs dos modulos de integracao rodando fora do sistema)."""
+    for k, v in _arquivo().items():
+        if v:
+            os.environ.setdefault(k, v)
+
+
 def valor(nome, padrao=''):
     v = os.environ.get(nome)
     if v is None:

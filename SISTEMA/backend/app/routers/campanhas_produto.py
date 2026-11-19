@@ -413,8 +413,8 @@ def _valida(p):
 async def produtos(user: Usuario = Depends(usuario_atual)):
     """Resumo dos dois produtos, para os quadrados da Visão geral."""
     _prep()
-    if not meta.get_token():
-        return {'erro': 'META_ADS_TOKEN ausente no config/.env', 'produtos': []}
+    if meta.faltando():
+        return {'erro': meta.faltando(), 'produtos': []}
     return await asyncio.to_thread(_cacheado, 'resumo', _montar_resumo)
 
 
@@ -422,8 +422,8 @@ async def produtos(user: Usuario = Depends(usuario_atual)):
 async def produto_visao(p: str = Query('trabalhista'), user: Usuario = Depends(usuario_atual)):
     _prep()
     p = _valida(p)
-    if not meta.get_token():
-        return {'erro': 'META_ADS_TOKEN ausente no config/.env'}
+    if meta.faltando():
+        return {'erro': meta.faltando()}
     return await asyncio.to_thread(_cacheado, 'visao:' + p, lambda: _montar_visao(p))
 
 
@@ -434,7 +434,7 @@ async def produto_dashboard(p: str = Query('trabalhista'), periodo: str = Query(
     p = _valida(p)
     if periodo not in ('today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum'):
         periodo = 'today'
-    if not meta.get_token():
+    if meta.faltando():
         return {'periodo': periodo, 'campanhas': [], 'total': {}}
     return await asyncio.to_thread(_montar_dashboard, p, periodo)
 
@@ -446,7 +446,7 @@ async def produto_anuncios(p: str = Query('trabalhista'), periodo: str = Query('
     p = _valida(p)
     if periodo not in ('today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum'):
         periodo = 'last_7d'
-    if not meta.get_token():
+    if meta.faltando():
         return {'periodo': periodo, 'anuncios': []}
     return await asyncio.to_thread(_cacheado, 'ads:%s:%s' % (p, periodo),
                                    lambda: _montar_anuncios(p, periodo))
@@ -457,7 +457,7 @@ async def produto_serie(p: str = Query('trabalhista'), dias: int = Query(14),
                         user: Usuario = Depends(usuario_atual)):
     _prep()
     p = _valida(p)
-    if not meta.get_token():
+    if meta.faltando():
         return {'serie': []}
     return await asyncio.to_thread(_cacheado, 'serie:%s:%d' % (p, dias),
                                    lambda: _montar_serie(p, dias))

@@ -8,6 +8,7 @@ LEITURA (liga com o token):
     carregar_settings()                         usuarios, tipos de tarefa, etapas, tipos de acao...
     listar_tarefas(**filtros)                   GET /posts  (date_start, date_end, completed_start,
                                                 completed_end, user_id, lawsuit_id; pagina tudo)
+    tarefas_abertas(usuario)                    tarefas nao concluidas pelo usuario (nome ou id)
     listar_historico(lawsuit_id)                GET /history/{id}
     buscar_processo(numero=None, nome=None, id=None)  -> list (id -> dict)
     listar_processos(**filtros)                 GET /lawsuits
@@ -73,7 +74,7 @@ class AdvboxErro(Exception):
 # BAIXO NIVEL
 # ============================================================
 
-def requisitar(metodo, caminho, params=None, json=None, tentativas=4):
+def requisitar(metodo, caminho, params=None, json=None, tentativas=10):
     import requests
     url = '%s/%s' % ((os.getenv('ADVBOX_API_BASE') or BASE).rstrip('/'), caminho.lstrip('/'))
     headers = {'Authorization': 'Bearer %s' % _token(), 'Accept': 'application/json'}
@@ -82,7 +83,8 @@ def requisitar(metodo, caminho, params=None, json=None, tentativas=4):
     for i in range(tentativas):
         r = requests.request(metodo, url, headers=headers, params=params, json=json, timeout=TIMEOUT)
         if r.status_code == 429 and i < tentativas - 1:
-            espera = int(r.headers.get('Retry-After') or 0) or 15 * (i + 1)
+            espera = int(r.headers.get('Retry-After') or 0) + 2 if r.headers.get('Retry-After') \
+                else min(15 * (i + 1), 90)
             log.warning('ADVBOX 429 em %s; esperando %ss', caminho, espera)
             time.sleep(espera)
             continue
@@ -139,6 +141,21 @@ def listar_tarefas(**filtros):
     if not ativo():
         return []
     return _paginar('posts', filtros)
+
+
+def tarefas_abertas(usuario, **filtros):
+    """Tarefas ainda nao concluidas por `usuario` (nome ou id do ADVBOX), da mais antiga para a
+    mais nova (prazo fatal, se houver; senao a data agendada). Uma tarefa com varios
+    responsaveis conta como aberta enquanto ESTE usuario nao a concluiu."""
+    uid = buscar_usuario(usuario)
+    if not uid:
+        return []
+    abertas = []
+    for t in listar_tarefas(user_id=uid, **filtros):
+        meu = [u for u in t.get('users') or [] if u.get('user_id') == uid]
+        if meu and not meu[0].get('completed'):
+            abertas.append(t)
+    return sorted(abertas, key=lambda t: (t.get('date_deadline') or t.get('date') or ''))
 
 
 def listar_historico(lawsuit_id):
@@ -338,6 +355,7 @@ def __getattr__(nome):
 #   python advbox_integration.py cliente <CPF ou nome>
 #   python advbox_integration.py historico <lawsuit_id>
 #   python advbox_integration.py tarefas <aaaa-mm-dd> <aaaa-mm-dd>
+#   python advbox_integration.py abertas <nome ou id do usuario>
 # ============================================================
 
 if __name__ == '__main__':
@@ -350,8 +368,12 @@ if __name__ == '__main__':
             load_dotenv('/opt/escritorio/config/.env')
     except ImportError:
         pass
+    if not ativo():  # sem python-dotenv (ou .env fora do lugar padrao): le o config/.env direto
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import escritorio_config
+        escritorio_config.carregar_env()
     if not ativo():
-        sys.exit('ADVBOX_API_TOKEN nao definido')
+        sys.exit('ADVBOX_API_TOKEN nao definido (nem no ambiente nem em config/.env)')
     cmd, args = (sys.argv[1] if len(sys.argv) > 1 else 'resumo'), sys.argv[2:]
     mostrar = lambda x: print(json.dumps(x, ensure_ascii=False, indent=2)[:6000])  # noqa: E731
     if cmd == 'resumo':
@@ -371,5 +393,17 @@ if __name__ == '__main__':
     elif cmd == 'tarefas':
         for t in listar_tarefas(date_start=args[0], date_end=args[1]):
             print(t.get('id'), t.get('date'), t.get('task'), '|', (t.get('lawsuit') or {}).get('process_number'))
+    elif cmd == 'abertas':
+        nome = ' '.join(args)
+        if not buscar_usuario(nome):
+            sys.exit('usuario %r nao encontrado (ou ambiguo) no ADVBOX' % nome)
+        lista = tarefas_abertas(nome)
+        print('%d tarefa(s) aberta(s) de %s' % (len(lista), nome))
+        for t in lista:
+            lw = t.get('lawsuit') or {}
+            partes = ' x '.join(c.get('name') or '' for c in (lw.get('customers') or [])[:2])
+            print('%s | prazo %s | %s | %s | %s | %s' % (
+                (t.get('date') or '')[:10], (t.get('date_deadline') or '-')[:10], t.get('task'),
+                lw.get('process_number') or '-', partes[:60], (t.get('notes') or '').replace('\n', ' ')[:70]))
     else:
         sys.exit(__doc__)

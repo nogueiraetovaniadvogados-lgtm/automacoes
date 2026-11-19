@@ -56,7 +56,7 @@ def _rate_limpar(*chaves: str) -> None:
 # MODELS
 # ============================================================
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str  # sem EmailStr: o admin local usa @local.test (dominio reservado)
     senha: str
 
 

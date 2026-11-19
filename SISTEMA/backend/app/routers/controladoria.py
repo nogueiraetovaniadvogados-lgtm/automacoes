@@ -116,6 +116,21 @@ def _cache_con():
     con.execute('CREATE TABLE IF NOT EXISTS sync_motor_sombra (id INTEGER PRIMARY KEY, ato TEXT, ramo TEXT, trilha TEXT, fatal INTEGER, titularidade TEXT, responsavel TEXT, confianca REAL, vencimento TEXT, fatal_interno TEXT, dias INTEGER, contagem TEXT, prazos TEXT, evidencias TEXT, avisos TEXT, criado_em REAL)')
     # Titularidade (nosso x parte contraria) resolvida do ADVBOX, cacheada por processo.
     con.execute('CREATE TABLE IF NOT EXISTS advbox_titularidade (numero TEXT PRIMARY KEY, titularidade TEXT, nosso_polo TEXT, cliente TEXT, parte_adversa TEXT, origem TEXT, criado_em REAL)')
+    # O motor le `clientes` e `adversos` (listas em JSON; litisconsorcio). Base criada antes
+    # dessas colunas fazia o SELECT do motor falhar e o motor ficava vazio em todo ciclo.
+    _cols = {r[1] for r in con.execute('PRAGMA table_info(advbox_titularidade)')}
+    for _c in ('clientes', 'adversos'):
+        if _c not in _cols:
+            con.execute(f'ALTER TABLE advbox_titularidade ADD COLUMN {_c} TEXT')
+    # 19/11/2026: tudo o que foi resolvido antes desta data veio do processo ERRADO (buscar_processo
+    # com numero_processo=). Marca uma vez para o resolvedor refazer (UPDATE, nao DELETE: na VPS a
+    # linha tem colunas do portal - pasta_drive, fase, responsavel - que nao podem sumir).
+    if not con.execute("SELECT 1 FROM sync_cache WHERE chave='_titularidade_refeita_20261119'").fetchone():
+        con.execute("UPDATE advbox_titularidade SET origem='refazer', titularidade='INDEFINIDO', cliente=NULL, "
+                    "parte_adversa=NULL, nosso_polo=NULL WHERE origem LIKE 'ADVBOX%' OR origem LIKE 'nao encontrado%'")
+        con.execute("INSERT OR REPLACE INTO sync_cache(chave,dados,atualizado_em) VALUES "
+                    "('_titularidade_refeita_20261119','1',?)", (time.time(),))
+        con.commit()
     return con
 
 
@@ -157,7 +172,9 @@ def _alerta_intimacoes(con, intims):
         if iid is None or iid in vistos:
             continue
         tem_prazo = bool(it.get('data_fatal') or it.get('requer_manifestacao'))
-        alertar = (not seed) and tem_prazo and bool(getattr(settings, 'CONTROLADORIA_ALERTA_ON', True))
+        # so publicacao dos ultimos 7 dias: as antigas que passaram a vir com `dias` nao sao "novas"
+        recente = str(it.get('data') or '')[:10] >= time.strftime('%Y-%m-%d', time.localtime(time.time() - 7 * 86400))
+        alertar = (not seed) and tem_prazo and recente and bool(getattr(settings, 'CONTROLADORIA_ALERTA_ON', True))
         con.execute('INSERT OR IGNORE INTO sync_intim_vistas(id,alertado,criado_em) VALUES(?,?,?)',
                     (iid, 1 if alertar else 0, time.time()))
         if alertar:
@@ -298,7 +315,7 @@ def _advbox():
 def _resolver_titularidade(con, numeros, limite=6):
     """Resolve nosso x parte contraria via ADVBOX (origin='PARTE CONTRARIA'), cacheado por
     processo. Bounded a `limite` processos novos por ciclo (respeita rate limit)."""
-    ja = set(r[0] for r in con.execute('SELECT numero FROM advbox_titularidade'))
+    ja = set(r[0] for r in con.execute("SELECT numero FROM advbox_titularidade WHERE COALESCE(origem,'') != 'refazer'"))
     faltam = [n for n in dict.fromkeys(numeros) if n and n not in ja][:limite]
     if not faltam:
         return 0
@@ -313,7 +330,9 @@ def _resolver_titularidade(con, numeros, limite=6):
     for num in faltam:
         tit = {'titularidade': 'INDEFINIDO', 'nosso_polo': None, 'cliente': None, 'parte_adversa': None, 'origem': 'nao encontrado no ADVBOX'}
         try:
-            lp = A.buscar_processo(numero_processo=num)
+            # `numero=`: com `numero_processo=` o filtro caia nos **filtros, o ADVBOX o ignorava e
+            # devolvia o PRIMEIRO processo da lista - todo processo virava o mesmo (cliente errado).
+            lp = A.buscar_processo(numero=num)
             proc = lp if isinstance(lp, dict) else (lp[0] if isinstance(lp, list) and lp else None)
             custs = (proc or {}).get('customers') or []
             # adversario: origin == PARTE CONTRARIA (acento-insensivel). nosso: os demais com origin.
@@ -326,6 +345,10 @@ def _resolver_titularidade(con, numeros, limite=6):
                 tit['origem'] = f"ADVBOX (cliente origin={nosso.get('origin')})"
             if adverso:
                 tit['parte_adversa'] = adverso.get('name')
+            tit['clientes'] = [c.get('name') for c in custs
+                               if c.get('name') and _norm(c.get('origin')) != 'PARTE CONTRARIA']
+            tit['adversos'] = [c.get('name') for c in custs
+                               if c.get('name') and _norm(c.get('origin')) == 'PARTE CONTRARIA']
             tp = _norm((proc or {}).get('type'))
             # BUG ATE 03/09/2026: a regra era "'RECLAMA' in tp -> ativo", e
             # 'RECLAMA' casa com RECLAMANTE **e com RECLAMADA**. Todo processo
@@ -341,14 +364,17 @@ def _resolver_titularidade(con, numeros, limite=6):
         # 24 das 169 linhas quando foi descoberto, em 03/09/2026.
         con.execute(
             'INSERT INTO advbox_titularidade'
-            '(numero,titularidade,nosso_polo,cliente,parte_adversa,origem,criado_em) '
-            'VALUES(?,?,?,?,?,?,?) '
+            '(numero,titularidade,nosso_polo,cliente,parte_adversa,origem,criado_em,clientes,adversos) '
+            'VALUES(?,?,?,?,?,?,?,?,?) '
             'ON CONFLICT(numero) DO UPDATE SET '
             'titularidade=excluded.titularidade, nosso_polo=excluded.nosso_polo, '
             'cliente=excluded.cliente, parte_adversa=excluded.parte_adversa, '
-            'origem=excluded.origem, criado_em=excluded.criado_em',
+            'origem=excluded.origem, criado_em=excluded.criado_em, '
+            'clientes=excluded.clientes, adversos=excluded.adversos',
             (num, tit['titularidade'], tit['nosso_polo'], tit['cliente'],
-             tit['parte_adversa'], tit['origem'], time.time()))
+             tit['parte_adversa'], tit['origem'], time.time(),
+             json.dumps(tit.get('clientes') or [], ensure_ascii=False),
+             json.dumps(tit.get('adversos') or [], ensure_ascii=False)))
         con.commit()
         n += 1
     return n
@@ -641,7 +667,10 @@ def refresh_cache():
         _cache_set(con, 'dashboard', _get('/dashboard'))
         _cache_set(con, 'monitores', _get('/monitores'))
         _cache_set(con, 'publicacoes', _get('/oab/publicacoes'))
-        inti = _get_all('/intimacoes', 'intimacoes', {'status': 'pendentes'})
+        # Sem `dias` o SYNC devolve so os ultimos 30 dias (98 de 420 pendentes em 19/11/2026),
+        # e o painel deles mostra o total: a fila daqui ficava menor que a real.
+        inti = _get_all('/intimacoes', 'intimacoes',
+                        {'status': 'pendentes', 'dias': int(getattr(settings, 'SYNC_INTIMACOES_DIAS', 3650) or 3650)})
         intims = inti.get('intimacoes', [])
         # inteiro teor primeiro: triagem e motor leem o mesmo campo `texto`
         try:

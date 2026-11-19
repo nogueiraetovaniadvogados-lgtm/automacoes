@@ -90,3 +90,7 @@ SISTEMA/backend/app/juridico/modelos/*.docx
 
 # saida de pecas geradas em teste local
 SISTEMA/backend/pecas_geradas/
+
+# planilhas da controladoria automatica (dados de clientes)
+SISTEMA/backend/relatorios_controladoria/
+SISTEMA/backend/producao_pecas/

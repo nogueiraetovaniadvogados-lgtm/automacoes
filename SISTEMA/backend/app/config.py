@@ -69,10 +69,14 @@ class Settings(BaseSettings):
     SYNC_API_TOKEN: str = ''
     SYNC_API_BASE: str = ''
     SYNC_CACHE_SEGUNDOS: int = 300
+    SYNC_INTIMACOES_DIAS: int = 3650   # janela das pendentes (o SYNC, sem isto, so manda 30 dias)
     CONTROLADORIA_ALERTA_ON: bool = True
     CONTROLADORIA_ALERTA_TEL: str = ''    # WhatsApp que recebe intimacao com prazo
     CONTROLADORIA_LEMBRETE_ON: bool = True
     CONTROLADORIA_LEMBRETE_DIAS: int = 3
+    # Controladoria automatica (SYNC/controladoria_auto.py): 0 desligada, 1 conclui ciencia, 2 + cadastra prazos
+    CONTROLADORIA_AUTO_NIVEL: int = 0
+    CONTROLADORIA_AUTO_CONFIANCA: float = 0.8
 
     # ===== Transcricao de audio (STT) — Groq ou OpenAI =====
     STT_API_KEY: str = ''
