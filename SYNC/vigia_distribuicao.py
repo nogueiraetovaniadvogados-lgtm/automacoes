@@ -262,40 +262,36 @@ def numeros_nas_tarefas(con):
     return achados
 
 
-def numeros_no_advbox(con, limite=10):
-    """(Advogada, 08/10/2026) Ponte temporária: o número sai do ADVBOX enquanto ele existir.
+def numeros_no_infinitum(con, limite=50):
+    """Número CNJ que já está no banco Processos do Infinitum e aqui ainda falta.
 
-    A sincronização das 5h atualiza fase e etapa mas NÃO copia o número, e a tarefa nem
-    sempre traz. Foi o que travou o Abel e o Silvano: protocolados, com número no ADVBOX
-    e card parado aqui. Quando o ADVBOX sair, basta apagar esta função: o número passa a
-    ser digitado na tela de processos e o resto do vigia continua igual.
+    (Advogada, 08/10/2026) Foi o que travou o Abel e o Silvano: protocolados, com número no
+    sistema jurídico e card parado aqui. Até 19/11/2026 o número vinha do ADVBOX; agora vem
+    do Infinitum (casado pelo ID Advbox guardado em jur_processos.advbox_id, ou pelo id do
+    registro no Infinitum para processo novo). Lê o cache local: não custa chamada por processo.
     """
-    import requests
-    tok = os.getenv('ADVBOX_TOKEN') or os.getenv('ADVBOX_API_TOKEN')
-    if not tok:
-        print('   (sem token do ADVBOX, pulo esta parte)')
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'INTEGRACOES'))
+    try:
+        import infinitum_dados as INFD
+    except Exception as e:
+        print(f'   (Infinitum indisponível, pulo esta parte: {e})')
         return []
-    cab = {'Authorization': 'Bearer ' + tok, 'User-Agent': 'Escritório Modelo/1.0', 'Accept': 'application/json'}
+    if not INFD.ativo():
+        print('   (sem token do Infinitum, pulo esta parte)')
+        return []
     achados = []
     pendentes = con.execute(
         "SELECT id, advbox_id, fase FROM jur_processos WHERE TRIM(COALESCE(numero,''))='' "
         " AND COALESCE(encerrado,0)=0 AND advbox_id IS NOT NULL ORDER BY id DESC").fetchall()
     for p in pendentes[:limite]:
         try:
-            r = requests.get('https://app.advbox.com.br/api/v1/lawsuits/%s' % p['advbox_id'],
-                             headers=cab, timeout=30)
-            if r.status_code >= 300:
-                continue
-            d = r.json()
-            d = d.get('data', d)
-            if isinstance(d, list) and d:
-                d = d[0]
+            d = INFD.buscar_processo(id=p['advbox_id']) or {}
             numero = (d.get('process_number') or '').strip()
             if RE_CNJ.match(numero):
                 achados.append({'processo_id': p['id'], 'numero': numero,
-                                'cliente': '(ADVBOX %s)' % p['advbox_id'], 'fase': p['fase']})
+                                'cliente': '(Infinitum %s)' % p['advbox_id'], 'fase': p['fase']})
         except Exception as e:
-            print(f"   (ADVBOX {p['advbox_id']}: {type(e).__name__})")
+            print(f"   (Infinitum {p['advbox_id']}: {type(e).__name__})")
     return achados
 
 
@@ -556,7 +552,7 @@ def rodar(aplicar, so_numero=False):
     print('\n-- 1. número do processo que a tarefa já traz e aqui ainda não existe')
     pendentes = numeros_nas_tarefas(con)
     vistos = {i['processo_id'] for i in pendentes}
-    pendentes += [i for i in numeros_no_advbox(con) if i['processo_id'] not in vistos]
+    pendentes += [i for i in numeros_no_infinitum(con) if i['processo_id'] not in vistos]
     for item in pendentes:
         r = gravar_numero(item, aplicar)
         print(f"   processo {item['processo_id']} ({str(item['cliente'])[:24]}): "

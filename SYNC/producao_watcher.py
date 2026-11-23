@@ -780,10 +780,11 @@ def upload_pacote(nome, atos_id, peca_path, L, total, dossie, executar):
 
 
 def tarefas_advbox(nome, links_txt, executar):
-    """Cria as tarefas no ADVBOX e retorna (prazo_revisao, prazo_protocolo)
-    para o estado do card - o relatorio diario mostra esses prazos finais."""
+    """Cria as tarefas (no sistema e, com INFINITUM_ESCRITA=1, como card na Controladoria
+    do Infinitum) e retorna (prazo_revisao, prazo_protocolo) para o estado do card - o
+    relatorio diario mostra esses prazos finais. O ADVBOX saiu em 19/11/2026."""
     sys.path.insert(0, os.path.join(os.path.dirname(_DIR), "INTEGRACOES"))
-    import advbox_integration as ab
+    import infinitum_dados as ab
     proc = ab.buscar_processo(nome=nome)
     lawsuit_id = None
     if proc and isinstance(proc, list):
@@ -791,7 +792,7 @@ def tarefas_advbox(nome, links_txt, executar):
     elif isinstance(proc, dict):
         lawsuit_id = proc.get("id")
     if not lawsuit_id:
-        raise ValueError(f"processo de '{nome}' nao encontrado no ADVBOX")
+        raise ValueError(f"processo de '{nome}' nao encontrado no Infinitum")
     hoje = _hoje()
     prazo_rev = hoje + timedelta(days=PRAZO_REVISAO_DIAS)
     prazo_prot = hoje + timedelta(days=PRAZO_PROTOCOLO_DIAS)

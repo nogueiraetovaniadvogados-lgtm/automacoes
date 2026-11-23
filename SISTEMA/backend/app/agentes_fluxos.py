@@ -322,16 +322,30 @@ def _processo(c, termo):
 
 
 def _advbox():
-    """O modulo do ADVBOX le a chave do ambiente e da sys.exit sem ela: carrega o .env antes."""
+    """Dados do escritorio no Infinitum (INTEGRACOES/infinitum_dados; o ADVBOX saiu em 19/11/2026).
+    O nome ficou: as ferramentas advbox_* estao registradas com ele nos agentes."""
     import sys as _sys
     from dotenv import load_dotenv
-    from .config import ENV_CENTRAL
+    from .config import ENV_CENTRAL, PROJETO_ROOT
     load_dotenv(str(ENV_CENTRAL))
-    if "/opt/escritorio/INTEGRACOES" not in _sys.path:
-        _sys.path.insert(0, "/opt/escritorio/INTEGRACOES")
-    import advbox_integration as ab
+    integ = str(PROJETO_ROOT / "INTEGRACOES")
+    if integ not in _sys.path:
+        _sys.path.insert(0, integ)
+    import infinitum_dados as ab
     import tarefas_esc as tp
     return ab, tp
+
+
+def _lawsuit_id(pr):
+    """Id do processo para a tarefa/andamento: o ID Advbox do cadastro ou, sem ele, o do Infinitum."""
+    if pr.get("lawsuit_id"):
+        return pr["lawsuit_id"]
+    try:
+        ab, _ = _advbox()
+        achados = ab.buscar_processo(numero=pr["numero"]) if pr.get("numero") else []
+        return achados[0]["id"] if achados else None
+    except Exception:
+        return None
 
 
 def _cnj_do_pedido(c, numero):
@@ -380,34 +394,32 @@ def advbox_criar_tarefa(c, ctx, processo, tipo, responsaveis, comentario, data=N
         return {"erro": "não achei o processo %s no cadastro" % processo}
     if pr.get("ambiguo"):
         return {"erro": "achei mais de um processo: %s. Diga o número." % ", ".join(pr["ambiguo"])}
-    if not pr.get("lawsuit_id"):
-        return {"erro": "esse processo não está ligado ao ADVBOX (sem id do ADVBOX no cadastro)"}
-    try:
-        ab, tp = _advbox()
-        task_id = ab.buscar_tipo_tarefa(str(tipo))
-    except BaseException as e:
-        return {"erro": "ADVBOX indisponível agora: %s" % str(e)[:120]}
+    lawsuit_id = _lawsuit_id(pr)
+    if not lawsuit_id:
+        return {"erro": "não achei o processo %s no Infinitum" % pr.get("numero")}
+    task_id = str(tipo).strip().upper()
     if not task_id:
-        return {"erro": "não existe tipo de tarefa \"%s\" no ADVBOX" % tipo}
-    inverso = {v: k for k, v in tp.USUARIOS.items()}
+        return {"erro": "diga o tipo da tarefa"}
+    # responsavel: usuario ATIVO do sistema pelo primeiro nome (a tarefa nasce no sistema e,
+    # com INFINITUM_ESCRITA=1, o card vai para quem tem o mesmo nome no Infinitum)
     todos = c.execute("SELECT id, nome FROM usuarios WHERE ativo=1").fetchall()
     guests, nomes, falta = [], [], []
     for n in (responsaveis or []):
         alvo = str(n).strip().lower()
-        u = next((x for x in todos if (x["nome"] or "").lower().split()[0] == alvo.split()[0]), None) if alvo else None
-        if u and inverso.get(u["id"]):
-            guests.append(inverso[u["id"]])
+        u = next((x for x in todos if (x["nome"] or "").lower().split()[:1] == alvo.split()[:1]), None) if alvo else None
+        if u:
+            guests.append(u["nome"])
             nomes.append(u["nome"].split()[0])
         else:
             falta.append(str(n))
     if falta or not guests:
-        return {"erro": "não achei no ADVBOX: %s" % (", ".join(falta) or "responsável")}
+        return {"erro": "não achei entre os usuários ativos: %s" % (", ".join(falta) or "responsável")}
     texto = str(comentario or "").strip() + "\n\n(Criada por %s a pedido de %s, pelo Sistema Escritório Modelo.)" % (ctx["agente"], ctx["primeiro"])
-    args = {"lawsuit_id": pr["lawsuit_id"], "task_id": task_id, "guests": guests, "comentario": texto,
+    args = {"lawsuit_id": lawsuit_id, "task_id": task_id, "guests": guests, "comentario": texto,
             "data": data or None, "prazo_fatal": prazo_fatal or None, "urgente": bool(urgente),
-            "resumo": "%s no ADVBOX para %s, processo %s" % (str(tipo).upper(), ", ".join(nomes), pr["numero"])}
+            "resumo": "%s para %s, processo %s" % (task_id, ", ".join(nomes), pr["numero"])}
     return pedir_confirmacao(c, ctx, "advbox_criar_tarefa", args,
-                             "Criar tarefa NO ADVBOX (depois não dá para apagar): %s, processo %s (%s), para %s%s%s%s.\n"
+                             "Criar tarefa (no sistema e na Controladoria do Infinitum): %s, processo %s (%s), para %s%s%s%s.\n"
                              "Texto: \"%s\"" % (str(tipo).upper(), pr["numero"],
                                                 " / ".join(x["nome"] for x in pr["clientes"][:2]) or "-", ", ".join(nomes),
                                                 ", data " + data if data else "", ", prazo fatal " + prazo_fatal if prazo_fatal else "",
@@ -415,41 +427,49 @@ def advbox_criar_tarefa(c, ctx, processo, tipo, responsaveis, comentario, data=N
 
 
 def _advbox_criar_tarefa(c, ctx, lawsuit_id, task_id, guests, comentario, data=None, prazo_fatal=None, urgente=False, resumo=""):
-    ab, _ = _advbox()
     try:
+        ab, _ = _advbox()
         r = ab.criar_publicacao(lawsuit_id, task_id, guests, comentario, None, prazo_fatal, urgente, data)
     except BaseException as e:
-        return {"erro": "o ADVBOX recusou: %s" % str(e)[:160]}
+        return {"erro": "não consegui criar a tarefa: %s" % str(e)[:160]}
     if not r:
-        return {"erro": "o ADVBOX não confirmou a criação"}
+        return {"erro": "a criação da tarefa não foi confirmada"}
+    aviso = ""
+    if isinstance(r, dict) and r.get("infinitum_erro"):
+        aviso = " (ficou só no sistema: o Infinitum recusou o card)"
     ctx["registrar"]("advbox_criar_tarefa", lawsuit_id, "Criei tarefa " + resumo, {"resposta": str(r)[:300]})
-    return {"ok": True, "feito": "Criei tarefa " + resumo + "."}
+    return {"ok": True, "feito": "Criei tarefa " + resumo + aviso + "."}
 
 
 def advbox_andamento(c, ctx, processo, texto, data=None):
     pr = _processo(c, processo)
-    if not pr or pr.get("ambiguo") or not pr.get("lawsuit_id"):
-        return {"erro": "processo não encontrado ou sem ligação com o ADVBOX"}
+    if not pr or pr.get("ambiguo"):
+        return {"erro": "processo não encontrado"}
+    lawsuit_id = _lawsuit_id(pr)
+    if not lawsuit_id:
+        return {"erro": "não achei o processo %s no Infinitum" % pr.get("numero")}
     texto = str(texto or "").strip()
     if len(texto) < 10:
         return {"erro": "o andamento precisa de pelo menos 10 caracteres"}
     dia = dt.date.fromisoformat(data).strftime("%d/%m/%Y") if data else dt.date.today().strftime("%d/%m/%Y")
     return pedir_confirmacao(c, ctx, "advbox_andamento",
-                             {"lawsuit_id": pr["lawsuit_id"], "data": dia, "texto": texto, "numero": pr["numero"]},
-                             "Lançar andamento NO ADVBOX (depois não dá para apagar) no processo %s, data %s:\n\"%s\""
+                             {"lawsuit_id": lawsuit_id, "data": dia, "texto": texto, "numero": pr["numero"]},
+                             "Lançar andamento NO INFINITUM (banco Movimentações) no processo %s, data %s:\n\"%s\""
                              % (pr["numero"], dia, texto[:600]))
 
 
 def _advbox_andamento(c, ctx, lawsuit_id, data, texto, numero=""):
-    ab, _ = _advbox()
     try:
+        ab, _ = _advbox()
+        if not ab.escrita_ativa():
+            return {"erro": "a gravação no Infinitum está desligada (INFINITUM_ESCRITA=0); o andamento não foi lançado"}
         r = ab.criar_movimentacao(lawsuit_id, data, texto)
     except BaseException as e:
-        return {"erro": "o ADVBOX recusou: %s" % str(e)[:160]}
+        return {"erro": "o Infinitum recusou: %s" % str(e)[:160]}
     if not r:
-        return {"erro": "o ADVBOX não confirmou o andamento"}
-    ctx["registrar"]("advbox_andamento", lawsuit_id, "Lancei andamento no ADVBOX (processo %s)" % numero, {"texto": texto})
-    return {"ok": True, "feito": "Lancei o andamento no ADVBOX, processo %s." % numero}
+        return {"erro": "o Infinitum não confirmou o andamento"}
+    ctx["registrar"]("advbox_andamento", lawsuit_id, "Lancei andamento no Infinitum (processo %s)" % numero, {"texto": texto})
+    return {"ok": True, "feito": "Lancei o andamento no Infinitum, processo %s." % numero}
 
 
 def mensagem_cliente(c, ctx, texto, cliente=None, processo=None, telefone=None):
@@ -1135,14 +1155,14 @@ FERRAMENTAS = {
         {"name": "minhas_pecas", "description": "As peças pedidas para a produção e a situação de cada uma.",
          "input_schema": {"type": "object", "properties": {}}},
         {"name": "advbox_criar_tarefa",
-         "description": "Cria tarefa NO ADVBOX num processo (não dá para apagar depois). Sempre volta com prévia para "
-                        "confirmar. Responsáveis pelo primeiro nome.",
+         "description": "Cria tarefa num processo: nasce no sistema e vira card na Controladoria do Infinitum. Sempre volta "
+                        "com prévia para confirmar. Responsáveis pelo primeiro nome.",
          "input_schema": {"type": "object", "properties": {
              "processo": {"type": "string", "description": "número CNJ ou nome do cliente"}, "tipo": _S,
              "responsaveis": {"type": "array", "items": _S}, "comentario": _S,
              "data": {"type": "string", "description": "AAAA-MM-DD"}, "prazo_fatal": {"type": "string", "description": "AAAA-MM-DD"},
              "urgente": {"type": "boolean"}}, "required": ["processo", "tipo", "responsaveis", "comentario"]}},
-        {"name": "advbox_andamento", "description": "Lança um andamento (movimentação manual) no processo NO ADVBOX. "
+        {"name": "advbox_andamento", "description": "Lança um andamento (movimentação manual) no processo NO INFINITUM. "
                                                     "Sempre volta com prévia para confirmar.",
          "input_schema": {"type": "object", "properties": {"processo": _S, "texto": _S,
                                                            "data": {"type": "string", "description": "AAAA-MM-DD"}},
@@ -1225,7 +1245,7 @@ FERRAMENTAS_TOTAL = [
      "description": "Faz no SERVIDOR qualquer trabalho que as outras ferramentas não cobrem, como o Claude Code do "
                     "Titular: separar, renomear, mover e organizar arquivos e pastas no Drive; ler documentos do Drive "
                     "e tirar informação; consultar, cruzar e corrigir dados do banco em lote; relatórios, listas e "
-                    "planilhas; conferências (ex.: quais clientes estão sem procuração assinada); consultas ao ADVBOX. "
+                    "planilhas; conferências (ex.: quais clientes estão sem procuração assinada); consultas ao Infinitum (processos, clientes, andamentos). "
                     "Roda em segundo plano (1 a 20 min) e o resultado chega aqui. Escreva o pedido COMPLETO e "
                     "autossuficiente: nomes completos, links, números de card/processo, e o que a pessoa quer no final.",
      "input_schema": {"type": "object", "properties": {"pedido": _S}, "required": ["pedido"]}},
@@ -1308,7 +1328,7 @@ PROMPT_AREAS = {
                 "revisar/conferir uma peça (pela tarefa de revisão ou pelo link); acompanha com minhas_revisoes; marca o "
                 "checklist; vê intimações pendentes e dá ciência quando pedirem; manda ESCREVER peças (escrever_peca: "
                 "contestação, réplica, recurso, manifestação...) e acompanha com minhas_pecas; cria tarefa e lança "
-                "andamento NO ADVBOX; e manda mensagem para CLIENTE no WhatsApp. ADVBOX e mensagem para cliente passam "
+                "andamento NO INFINITUM; e manda mensagem para CLIENTE no WhatsApp. Tarefa, andamento e mensagem para cliente passam "
                 "SEMPRE pela prévia e pelo sim da pessoa.",
     "marketing": "Marketing: você cuida do Estúdio de Conteúdo (Instagram do escritório): lista a pauta, mostra uma peça, cria "
                  "tema novo, manda refazer com ajuste, muda estado e data; e analisa os anúncios da Meta. PUBLICAR no "
@@ -1336,10 +1356,10 @@ def prompt(ctx):
     if total(ctx):
         txt += ("\n- PERMISSÃO TOTAL (Titular, 02/10/2026): para essa pessoa você pode TUDO no sistema. O que o usuário "
                 "dela não pode, o sistema refaz como administração sozinho. E para o que nenhuma ferramenta faz (Drive, "
-                "banco em lote, relatórios, planilhas, conferências, ADVBOX) use operador_tecnico, que trabalha no "
+                "banco em lote, relatórios, planilhas, conferências, Infinitum) use operador_tecnico, que trabalha no "
                 "servidor como o Claude Code do Titular. NUNCA responda \"não tenho acesso\" ou \"não consigo\" sem "
                 "antes tentar sistema_api ou operador_tecnico. Mensagem para cliente ou lead continua com prévia e sim.")
-    txt += ("\n- Ação externa (lead, cliente, ADVBOX, card que dispara robô): chame a ferramenta DIRETO; ela devolve a "
+    txt += ("\n- Ação externa (lead, cliente, Infinitum, card que dispara robô): chame a ferramenta DIRETO; ela devolve a "
             "prévia oficial com \"precisa_confirmar\". NÃO faça prévia por conta própria antes. Mostre a prévia do jeito "
             "que veio, pergunte, e só chame confirmar_acao(codigo) se a PRÓXIMA mensagem da pessoa for um sim para ela. "
             "Se a pessoa fizer outro pedido em vez de responder, a prévia fica esperando: não confirme. Se ela mudar o "

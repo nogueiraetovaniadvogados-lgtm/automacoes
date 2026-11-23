@@ -26,7 +26,7 @@ from ..deps import usuario_atual
 
 router = APIRouter(prefix="/api/andamentos", tags=["andamentos"])
 
-FRESCOR_MIN = 60           # le o ADVBOX de novo se a copia tiver mais que isso
+FRESCOR_MIN = 60           # le o Infinitum de novo se a copia tiver mais que isso
 
 
 def _nome(user):
@@ -48,7 +48,7 @@ def _processo(c, processo_id=None, numero=None):
 
 
 def _precisa_ler(c, p):
-    if not p or not p.get("advbox_id"):
+    if not p or not (p.get("advbox_id") or p.get("numero")):
         return False
     s = c.execute("SELECT sincronizado_em FROM jur_andamentos_sync WHERE processo_id=?", (p["id"],)).fetchone()
     if not s or not s[0]:
@@ -71,7 +71,7 @@ def _itens(c, p, numero, user):
     out = []
     if p:
         for r in c.execute("SELECT * FROM jur_andamentos WHERE processo_id=? AND removido=0", (p["id"],)):
-            meu = r["origem"] != "advbox" and (r["autor_id"] == user.id or _admin(user))
+            meu = r["origem"] not in A.ORIGENS_EXTERNAS and (r["autor_id"] == user.id or _admin(user))
             out.append({"id": r["id"], "kind": "andamento", "origem": r["origem"], "tipo": r["tipo"],
                         "texto": r["texto"], "autor": r["autor"], "responsavel": r["responsavel"],
                         "quando": r["criado_em"], "prazo": r["prazo"], "editado_em": r["editado_em"],
@@ -188,8 +188,8 @@ def _meu(c, aid, user):
     r = c.execute("SELECT * FROM jur_andamentos WHERE id=? AND removido=0", (aid,)).fetchone()
     if not r:
         raise HTTPException(404, "Andamento nao encontrado")
-    if r["origem"] == "advbox":
-        raise HTTPException(403, "O que veio do ADVBOX nao se edita aqui")
+    if r["origem"] in A.ORIGENS_EXTERNAS:
+        raise HTTPException(403, "O que veio do ADVBOX/Infinitum nao se edita aqui")
     if r["autor_id"] != user.id and not _admin(user):
         raise HTTPException(403, "So quem escreveu (ou um administrador) muda este andamento")
     return r

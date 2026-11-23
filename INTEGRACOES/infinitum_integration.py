@@ -48,6 +48,7 @@ import os
 import sys
 import json
 import logging
+import time
 import unicodedata
 
 import requests
@@ -91,8 +92,22 @@ def requisitar(metodo, caminho, params=None, json=None):
     url = f'{_base()}/{caminho.lstrip("/")}'
     if params:
         params = {k: v for k, v in params.items() if v is not None}
-    r = requests.request(metodo, url, headers=get_headers(), params=params,
-                         json=json, timeout=TIMEOUT)
+    # a API oscila (timeout de conexao, 502/503/504): tenta de novo com espera crescente.
+    # POST so repete se a conexao nem abriu (senao poderia criar registro duplicado).
+    for tentativa, espera in enumerate((5, 15, 30, None)):
+        try:
+            r = requests.request(metodo, url, headers=get_headers(), params=params,
+                                 json=json, timeout=TIMEOUT)
+            if r.status_code in (502, 503, 504) and metodo != 'POST' and espera:
+                time.sleep(espera)
+                continue
+            break
+        except (requests.ConnectionError, requests.Timeout) as e:
+            so_conexao = isinstance(e, requests.ConnectTimeout) or (
+                isinstance(e, requests.ConnectionError) and not isinstance(e, requests.ReadTimeout))
+            if espera is None or (metodo == 'POST' and not so_conexao):
+                raise
+            time.sleep(espera)
     if r.status_code >= 400:
         raise InfinitumErro(r.status_code, r.text, metodo, caminho)
     if not r.content:

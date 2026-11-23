@@ -67,7 +67,10 @@ for _linha in open('/opt/escritorio/config/.env', encoding='utf-8'):
         os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
 import requests                                              # noqa: E402
-import advbox_integration as AB                              # noqa: E402
+# 19/11/2026: o ADVBOX saiu. Mesmas funcoes, lidas do Infinitum: tarefas = cards do POP
+# Controladoria (audiencia = card com titulo comecando por "Audiencia" e a data no texto),
+# historico = banco Movimentacoes. A fonte continua rotulada 'advbox' na consolidacao.
+import infinitum_dados as AB                                 # noqa: E402
 import tarefas_esc as TP                                     # noqa: E402
 from app import agenda_google as AG                          # noqa: E402
 from app import audiencias_nucleo as N                       # noqa: E402
@@ -1073,7 +1076,7 @@ def main():
     tar = de_tarefas_locais(con)
     sis = de_sistema(con)
     agenda = de_agendas()
-    print('fontes: ADVBOX %d (de %d tarefas lidas) | tribunal (SYNC) %d | intimações %d | '
+    print('fontes: Infinitum %d (de %d cards lidos) | tribunal (SYNC) %d | intimações %d | '
           'tarefas do sistema %d | lançadas no sistema %d | agendas %d'
           % (len(adv), total_tarefas, len(sync), len(intim), len(tar), len(sis), len(agenda)))
     adv_ok = total_tarefas > 0
@@ -1081,7 +1084,7 @@ def main():
         # ADVBOX sem resposta nao pode virar "nenhuma audiencia": foi assim que
         # o robo de lembretes ficou mudo por 11 dias. As outras fontes seguem,
         # mas nesta rodada nada e sobrescrito nem sai do registro.
-        print('ALERTA: o ADVBOX não devolveu nenhuma tarefa. Só entra audiência nova; '
+        print('ALERTA: o Infinitum não devolveu nenhum card. Só entra audiência nova; '
               'nada é sobrescrito nem sai do registro hoje.')
 
     auds = consolidar(adv + intim + sync + tar + sis + agenda)
@@ -1165,9 +1168,13 @@ def main():
                             [proc, HOJE.isoformat()] + validas)
             # Processo NAO visto hoje: pode ser rodada ruim do ADVBOX. So cai depois
             # de tres dias sem aparecer; uma falha de API nao apaga audiencia.
+            # 19/11/2026: o que so o ADVBOX conhecia nao volta a ser visto (ele saiu). Essas
+            # audiencias ficam ativas ate a data passar, em vez de sumirem em 3 dias.
             corte = (dt.datetime.now() - dt.timedelta(days=3)).strftime('%Y-%m-%d %H:%M:%S')
             con.execute("UPDATE audiencia_registro SET status='nao_vista' "
-                        "WHERE data>=? AND status='ativa' AND COALESCE(editado_local,0)=0 AND visto_em < ?",
+                        "WHERE data>=? AND status='ativa' AND COALESCE(editado_local,0)=0 AND visto_em < ? "
+                        "AND NOT (COALESCE(fontes,'') != '' AND "
+                        "REPLACE(REPLACE(REPLACE(fontes,'advbox-comentario',''),'advbox',''),',','') = '')",
                         (HOJE.isoformat(), corte))
         con.commit()
 

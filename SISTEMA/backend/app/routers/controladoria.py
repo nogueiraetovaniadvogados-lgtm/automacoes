@@ -130,6 +130,13 @@ def _cache_con():
                     "parte_adversa=NULL, nosso_polo=NULL WHERE origem LIKE 'ADVBOX%' OR origem LIKE 'nao encontrado%'")
         con.execute("INSERT OR REPLACE INTO sync_cache(chave,dados,atualizado_em) VALUES "
                     "('_titularidade_refeita_20261119','1',?)", (time.time(),))
+    # 19/11/2026: a titularidade passou a vir do Infinitum. O que o ADVBOX nao achou (ou deu erro)
+    # pode estar la: refaz so essas linhas, uma vez. O que o ADVBOX resolveu continua valendo.
+    if not con.execute("SELECT 1 FROM sync_cache WHERE chave='_titularidade_infinitum_20261119'").fetchone():
+        con.execute("UPDATE advbox_titularidade SET origem='refazer' "
+                    "WHERE origem LIKE 'nao encontrado no ADVBOX%' OR origem LIKE 'erro ADVBOX%'")
+        con.execute("INSERT OR REPLACE INTO sync_cache(chave,dados,atualizado_em) VALUES "
+                    "('_titularidade_infinitum_20261119','1',?)", (time.time(),))
         con.commit()
     return con
 
@@ -296,25 +303,24 @@ _PROJ_ROOT = Path(__file__).resolve().parents[4]   # .../AUTOMACOES Escritório 
 
 
 def _advbox():
-    """Importa advbox_integration do projeto e garante o token no ambiente. None se indisponivel."""
+    """Dados do escritorio (processos, partes) no Infinitum, no formato do antigo ADVBOX
+    (INTEGRACOES/infinitum_dados.py; o ADVBOX saiu em 19/11/2026). None se indisponivel.
+    O nome da funcao e da tabela advbox_titularidade ficam: o portal e as telas leem por eles."""
     try:
         integ = str(_PROJ_ROOT / 'INTEGRACOES')
         if integ not in sys.path:
             sys.path.insert(0, integ)
-        if not os.environ.get('ADVBOX_API_TOKEN'):
-            tok = getattr(settings, 'ADVBOX_API_TOKEN', '') or ''
-            if tok:
-                os.environ['ADVBOX_API_TOKEN'] = tok
-        import advbox_integration as A
-        return A
+        import infinitum_dados as A
+        return A if A.ativo() else None
     except Exception as e:
-        log.warning('advbox indisponivel p/ titularidade: %s', e)
+        log.warning('infinitum indisponivel p/ titularidade: %s', e)
         return None
 
 
-def _resolver_titularidade(con, numeros, limite=6):
-    """Resolve nosso x parte contraria via ADVBOX (origin='PARTE CONTRARIA'), cacheado por
-    processo. Bounded a `limite` processos novos por ciclo (respeita rate limit)."""
+def _resolver_titularidade(con, numeros, limite=30):
+    """Resolve nosso x parte contraria pelo banco Processos do Infinitum (vinculo Cliente x
+    Parte adversa, que viram origin CLIENTE / 'PARTE CONTRARIA'), cacheado por processo.
+    Le o cache local do Infinitum: o limite por ciclo e so para nao segurar a fila."""
     ja = set(r[0] for r in con.execute("SELECT numero FROM advbox_titularidade WHERE COALESCE(origem,'') != 'refazer'"))
     faltam = [n for n in dict.fromkeys(numeros) if n and n not in ja][:limite]
     if not faltam:
@@ -328,7 +334,7 @@ def _resolver_titularidade(con, numeros, limite=6):
 
     n = 0
     for num in faltam:
-        tit = {'titularidade': 'INDEFINIDO', 'nosso_polo': None, 'cliente': None, 'parte_adversa': None, 'origem': 'nao encontrado no ADVBOX'}
+        tit = {'titularidade': 'INDEFINIDO', 'nosso_polo': None, 'cliente': None, 'parte_adversa': None, 'origem': 'nao encontrado no Infinitum'}
         try:
             # `numero=`: com `numero_processo=` o filtro caia nos **filtros, o ADVBOX o ignorava e
             # devolvia o PRIMEIRO processo da lista - todo processo virava o mesmo (cliente errado).
@@ -342,7 +348,7 @@ def _resolver_titularidade(con, numeros, limite=6):
             if nosso:
                 tit['cliente'] = nosso.get('name')
                 tit['titularidade'] = 'NOSSO'
-                tit['origem'] = f"ADVBOX (cliente origin={nosso.get('origin')})"
+                tit['origem'] = f"Infinitum (cliente origin={nosso.get('origin')})"
             if adverso:
                 tit['parte_adversa'] = adverso.get('name')
             tit['clientes'] = [c.get('name') for c in custs
@@ -357,7 +363,7 @@ def _resolver_titularidade(con, numeros, limite=6):
             tit['nosso_polo'] = ('passivo' if 'DEFESA' in tp
                                  else _polo_do_tipo(tp))
         except Exception as e:
-            tit['origem'] = f'erro ADVBOX: {str(e)[:60]}'
+            tit['origem'] = f'erro Infinitum: {str(e)[:60]}'
         # UPSERT, nao INSERT OR REPLACE: o REPLACE apaga a linha inteira e
         # grava so estas 7 colunas, zerando tipo/fase/etapa/responsavel/
         # pasta_drive/lawsuit_id - que o PORTAL DO CLIENTE le. Ja tinha comido
@@ -682,7 +688,7 @@ def refresh_cache():
                for r in con.execute('SELECT id,categoria,urgencia,acao,prazo_dias,requer_acao FROM sync_intim_triagem')}
         # Motor deterministico (SOMBRA): titularidade (bounded) + calculo de prazo.
         try:
-            _resolver_titularidade(con, [it.get('processo') for it in intims], limite=6)
+            _resolver_titularidade(con, [it.get('processo') for it in intims], limite=30)
             motor = _motor_sombra(con, intims)
         except Exception as e:
             log.warning('motor sombra: %s', e)

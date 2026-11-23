@@ -402,7 +402,10 @@ def sincronizar(nome_banco, itens, mapear, chave_registro, chave_item, executar,
     if not banco:
         print('!! banco "%s" nao existe no Infinitum' % nome_banco)
         return
-    campos = {c['field_id']: c['id'] for c in INF.listar_campos_banco(banco['id'])}
+    defs = INF.listar_campos_banco(banco['id'])
+    campos = {c['field_id']: c['id'] for c in defs}
+    obrigatorios = [c['field_id'] for c in defs if c.get('required')]
+    pendentes = []    # o Infinitum recusa gravar registro com campo obrigatorio vazio
     existentes = {}   # chave -> lista (o ADVBOX tem andamentos identicos repetidos de verdade)
     registros = INF.listar_registros(banco['id'])
     chaves_de = {}    # record id -> chaves (registro mesclado tem varios IDs ADVBOX)
@@ -428,7 +431,11 @@ def sincronizar(nome_banco, itens, mapear, chave_registro, chave_item, executar,
             if sempre is None:   # o mapeamento pediu para nao criar (pessoa ja mesclada)
                 continue
             valores = {k2: v for k2, v in {**so_vazio, **sempre}.items() if k2 in campos and not _vazio(v)}
-            criar.append((titulo, valores))
+            falta = [f for f in obrigatorios if _vazio(valores.get(f))]
+            if falta:
+                pendentes.append(('novo', titulo, falta))
+            else:
+                criar.append((titulo, valores))
         elif atualizar and reg['id'] not in tocados:   # mesclado: so o primeiro item do ADVBOX atualiza
             tocados.add(reg['id'])
             if len(chaves_de[reg['id']]) > 1:
@@ -436,7 +443,10 @@ def sincronizar(nome_banco, itens, mapear, chave_registro, chave_item, executar,
             dif = diferencas(reg.get('values') or {}, sempre, so_vazio)
             dif = {k2: v for k2, v in dif.items() if k2 in campos}
             novo_titulo = titulo if atualizar_titulo and _txt(reg.get('title')) != _txt(titulo) else None
-            if dif or novo_titulo:
+            falta = [f for f in obrigatorios if _vazio((reg.get('values') or {}).get(f)) and f not in dif]
+            if (dif or novo_titulo) and falta:
+                pendentes.append(('existente', _txt(reg.get('title')), falta))
+            elif dif or novo_titulo:
                 mudar.append((reg, novo_titulo, dif))
     print('\n== %s: ADVBOX %d | Infinitum %d | criar %d | atualizar %d'
           % (nome_banco, len(itens), total_inf, len(criar), len(mudar)))
@@ -447,6 +457,10 @@ def sincronizar(nome_banco, itens, mapear, chave_registro, chave_item, executar,
             print('   ! %d no Infinitum que nao existem mais no ADVBOX (nao apagados):' % len(sumiram))
             for r in sumiram[:10]:
                 print('     - %s (ID ADVBOX %s)' % (_txt(r.get('title'))[:80], ', '.join(chaves_de[r['id']])))
+    if pendentes:
+        print('   ? %d sem campo obrigatorio no Infinitum (preencher a mao; o sync nao inventa):' % len(pendentes))
+        for tipo, titulo, falta in pendentes[:15]:
+            print('     - [%s] %s: falta %s' % (tipo, titulo[:80], ', '.join(falta)))
     for titulo, _ in criar[:15]:
         print('   + %s' % titulo[:110])
     cont = Counter(k for *_, dif in mudar for k in dif)
