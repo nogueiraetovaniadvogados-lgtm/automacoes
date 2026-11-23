@@ -282,19 +282,25 @@ def _dt(d):
     return ('%sT00:00:00Z' % str(d)[:10]) if d else None
 
 
-def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None):
+def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False):
     I, pid, fases = _inf()
     it = json.loads(p['intimacao'])
     fase = fases.get(FASE_REVISAO)
     tipo = tipo or p['ato']
-    anot = ('Peça redigida pela controladoria automática em %s (%s). Conferir antes do protocolo.\n'
-            'Arquivo: %s%s' % (datetime.now().strftime('%d/%m/%Y %H:%M'), tipo, caminho_y or '-',
-                               ('\nGoogle Drive: %s' % link) if link else ''))
+    if sem_peca:
+        anot = ('Controladoria automática em %s: o redator leu os autos e concluiu que NÃO cabe peça '
+                '(%s). Parecer em "Tese jurídica". Confirmar e dar ciência.'
+                % (datetime.now().strftime('%d/%m/%Y %H:%M'), tipo))
+    else:
+        anot = ('Peça redigida pela controladoria automática em %s (%s). Conferir antes do protocolo.\n'
+                'Arquivo: %s%s' % (datetime.now().strftime('%d/%m/%Y %H:%M'), tipo, caminho_y or '-',
+                                   ('\nGoogle Drive: %s' % link) if link else ''))
     dados = {'Tese jurídica': resumo or '', 'Anotações da elaboração': anot,
              'Prazo fatal': _dt(p['vencimento']), 'Prazo interno': _dt(p['fatal_interno'])}
-    url = link or (Path(caminho_y).as_uri() if caminho_y else None)
-    if url:
-        dados['Link da petição pronta'] = url
+    # So link web: o Infinitum/navegador nao abre file:///Y:/... (virava "www.file.com", 23/11/2026).
+    # Sem Drive, o caminho no Y: fica nas anotacoes.
+    if link and str(link).startswith('http'):
+        dados['Link da petição pronta'] = link
     dados = {k: v for k, v in dados.items() if v}
     card = achar_card(I, pid, fases, p['processo'], it.get('data'))
 
@@ -346,6 +352,26 @@ def card_para_mero_expediente(processo, data_pub, motivo):
 
 # ------------------------------------------------------------------ processamento
 
+def concluir_sem_peca(c, p, sai, resumo):
+    """O redator leu os autos e concluiu que NAO cabe peca (motor errou o prazo: ex. 0000781-63, cliente
+    so arrematante, 23/11/2026). Nao e erro: nao tenta de novo; o card vai para revisao com o parecer,
+    para uma pessoa confirmar e dar ciencia. Nada e marcado tratado sozinho."""
+    tipo = ''
+    if (sai / 'TIPO.txt').exists():
+        tipo = ((sai / 'TIPO.txt').read_text(encoding='utf-8').strip().splitlines() or [''])[0][:80]
+    tipo = tipo or 'Nenhuma peça cabível'
+    parecer = 'SEM PEÇA: o redator leu os autos e concluiu que não cabe peça. Confirmar e dar ciência.\n' + resumo
+    card_id = None
+    try:
+        card_id = atualizar_infinitum(p, None, None, parecer, tipo, sem_peca=True)
+    except Exception as e:
+        log.warning('peca %s: card do Infinitum: %s', p['id'], e)
+    c.execute("UPDATE controladoria_pecas SET status='sem_peca', card_id=?, resumo=?, erro=NULL, concluido_em=? "
+              "WHERE id=?", (card_id, parecer[:1500], time.time(), p['id']))
+    c.commit()
+    log.info('peca %s: SEM PECA (parecer do redator) | card %s', p['id'], card_id)
+
+
 def processar(c, p):
     pid = p['id']
     work = PRODUCAO / ('%s_%s' % (pid, _digitos(p['processo'])[:20]))
@@ -361,6 +387,9 @@ def processar(c, p):
         rc = rodar_claude(work, instrucao(p, work))
         resumo = (sai / 'RESUMO.md').read_text(encoding='utf-8').strip()[:1500] if (sai / 'RESUMO.md').exists() else ''
         if not (sai / 'PECA.txt').exists():
+            if rc == 0 and resumo:
+                concluir_sem_peca(c, p, sai, resumo)
+                return
             raise RuntimeError('o redator terminou sem PECA.txt (codigo %s). %s' % (rc, resumo[:300]))
         cliente = (p['cliente'] or 'CLIENTE').split(' / ')[0].strip()
         # o redator pode trocar a peca (o motor errou o ato): o nome vem do que ele redigiu
