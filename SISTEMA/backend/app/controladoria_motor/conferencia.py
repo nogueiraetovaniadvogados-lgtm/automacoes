@@ -44,8 +44,8 @@ _TABELA = {
         'Analisar a decisao de execucao e levar a Dra. Advogada.',
         'ANALISE DE SENTENCA', 'Dra. Advogada decide e produz', 0),
     'EMBARGOS DE DECLARACAO': (
-        'Decisao dos ED publicada: o prazo recursal reinicia por inteiro. '
-        'Recontar RO ou RR do zero.',
+        'Apontar a omissao, contradicao, obscuridade ou erro material da decisao. ED em 5 dias uteis '
+        'interrompe o prazo do recurso, que recomeca por inteiro quando os ED forem julgados.',
         'ANALISE DE SENTENCA', 'Dra. Advogada decide e produz', 9),
     'CONTRARRAZOES DE RO': (
         'Contrarrazoes em 8 dias uteis. Peca fatal.',

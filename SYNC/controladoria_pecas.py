@@ -110,11 +110,14 @@ def enfileirar(c, it, m):
 def dossie(p, ent):
     it, m = json.loads(p['intimacao']), json.loads(p['motor'])
     conf = m.get('conferencia') or {}
+    # `texto_completo` e um sinalizador do SYNC (True = inteiro teor carregado), nao o texto:
+    # lido primeiro, o CASO.md da peca de teste saiu com "True" no lugar da publicacao
+    teor = next((v for v in (it.get('texto_completo'), it.get('texto'), it.get('resumo')) if isinstance(v, str) and v), '')
     caso = [
         '# INTIMACAO %s' % it.get('id'),
         'Processo: %s | Tribunal: %s | Orgao: %s' % (it.get('processo'), it.get('tribunal'), it.get('orgao')),
         'Data da publicacao: %s | Tipo: %s - %s' % (it.get('data'), it.get('tipo_comunicacao'), it.get('tipo_ato')),
-        '\n## Texto da publicacao\n%s' % (it.get('texto_completo') or it.get('texto') or it.get('resumo') or ''),
+        '\n## Texto da publicacao\n%s' % teor,
         '\n# LEITURA DO MOTOR DA CONTROLADORIA (conferir; nao e verdade absoluta)',
         'Ato cabivel: %s | Trilha: %s | Prazo de quem: %s | Confianca: %s' % (
             m.get('ato'), m.get('trilha'), m.get('titularidade'), m.get('confianca')),
@@ -177,8 +180,11 @@ def rodar_claude(work, texto):
     env = dict(os.environ)
     env.pop('ANTHROPIC_API_KEY', None)                   # assinatura, nunca credito de API
     env['CLAUDE_CODE_MAX_OUTPUT_TOKENS'] = '64000'
+    # o plugin rubber-duck tem um hook SessionEnd quebrado ({{PLUGIN_DIR}} nao expandido) que
+    # sujava o claude_log.txt de toda peca; desligado so nesta rodada, sem mexer no ~/.claude
+    sem_plugin = json.dumps({'enabledPlugins': {'rubber-duck@anthropic-plugin-directory': False}})
     cmd = [_claude_exe(), '-p', '--model', 'opus', '--permission-mode', 'acceptEdits',
-           '--add-dir', str(work), '--allowedTools',
+           '--settings', sem_plugin, '--add-dir', str(work), '--allowedTools',
            'Skill', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebSearch', 'WebFetch']
     with open(work / 'claude_log.txt', 'w', encoding='utf-8') as f:
         r = subprocess.run(cmd, input=texto.encode('utf-8'), stdout=f, stderr=subprocess.STDOUT, env=env,

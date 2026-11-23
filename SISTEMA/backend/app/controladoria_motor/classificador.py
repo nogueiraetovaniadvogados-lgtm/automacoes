@@ -160,17 +160,58 @@ def _so_cabecalho(texto_norm):
 _GRAU2 = re.compile(
     r'tribunal regional do trabalho.{0,120}?\bturma\b|tribunal de justica.{0,160}?\bcamara\b|'
     r'intimad[ao]s? d[oa] acordao|acordao proferido|acordao em \d{2}/\d{2}/\d{4}|'
-    r'\b2o? ?grau\b|segundo grau|\brecorrente ?:|\bturma\b.{0,60}?\brelator')
+    r'\b2o? ?grau\b|segundo grau|\brecorrente ?:|\bturma\b.{0,60}?\brelator|'
+    # e-SAJ do TJSP (0000781-63.2008.8.26.0318, 12/11/2026): "INTIMACAO DE ACORDAO ... Deram provimento"
+    r'intimacao de acordao')
+# O campo `orgao` diz o grau melhor que o texto: decisao de vara que transcreve ementa ("9a Camara
+# de Direito Privado") ou cita "o v. acordao proferido no agravo" virava 2o grau (23/11/2026).
+_ORGAO_2 = re.compile(r'\bcamara\b|\bturma\b|\bsecao\b|\bgrupo\b|desembargador|\bsdi\b|orgao especial')
+_ORGAO_1 = re.compile(r'\bvara\b|\bforo\b|\bupj\b|juizado|\bliq ?\d|\bcon ?\d|\bcejusc\b')
 _GRAU3 = re.compile(r'tribunal superior do trabalho|superior tribunal de justica|supremo tribunal federal|'
                     r'ministr[oa] relator|\bsdi\b|secao de dissidios')
 _SO_NO_1O_GRAU = {'trabalhista': {'RECURSO ORDINARIO': 'RECURSO DE REVISTA'},
                   'civel': {'APELACAO': 'RECURSO ESPECIAL / EXTRAORDINARIO'}}
 
 
-def grau_do_texto(texto_norm: str) -> int:
-    """1 = vara; 2 = TRT/TJ (Turma/Camara); 3 = TST/STJ/STF. Pelo texto inteiro, nao pelo corpo."""
+# Decisao que JULGA embargos de declaracao ja opostos (caso Carla x Notre Dame, 0033845-46,
+# 16/11/2026): "CONHECO E REJEITO os embargos de declaracao" batia os gatilhos do ED
+# (omissao, contradicao...) e virava "cabem ED" em 5 dias. O cabivel e o recurso contra a
+# decisao embargada, com o prazo reiniciado por inteiro (art. 1.026 CPC / 897-A, 3o CLT).
+_ED_JULGADOS = re.compile(
+    r'\b(?:conheco|nao conheco|rejeito|acolho|desacolho|julgo (?:im)?procedentes?|nego provimento|'
+    r'dou (?:parcial )?provimento)\b[^.]{0,60}?\bembargos\b|'
+    r'\bembargos\b[^.]{0,60}?\b(?:rejeitados|acolhidos|conhecidos|improcedentes|procedentes|desprovidos|providos)\b')
+
+
+_ED_MANIFESTAR = re.compile(
+    r'\bmanifest\w*(?: ?-?se)?\b[^.]{0,60}?\bsobre (?:os|o recurso de) embargos\b|'
+    r'\bembargos de declaracao (?:opostos|interpostos|apresentados)\b[^.]{0,80}?\bmanifest|'
+    r'\bcontrarrazo\w* aos embargos\b')
+
+
+def recurso_apos_ed(ramo: str, grau: int, tipo_ato: str, texto_norm: str) -> str:
+    """Recurso contra a decisao embargada, depois que os ED foram julgados."""
+    tipo = _norm(tipo_ato)
+    execucao = bool(re.search(r'cumprimento (?:provisorio )?de sentenca|execucao', texto_norm))
+    if ramo == 'trabalhista':
+        if grau >= 2:
+            return 'RECURSO DE REVISTA'
+        return 'AGRAVO DE PETICAO' if execucao else 'RECURSO ORDINARIO'
+    if grau >= 2:
+        return 'RECURSO ESPECIAL / EXTRAORDINARIO'
+    return 'APELACAO' if 'sentenca' in tipo and not execucao else 'AGRAVO DE INSTRUMENTO'
+
+
+def grau_do_texto(texto_norm: str, orgao: str = '') -> int:
+    """1 = vara; 2 = TRT/TJ (Turma/Camara); 3 = TST/STJ/STF. Pelo texto inteiro, nao pelo corpo.
+    Com `orgao` claro (Camara/Turma x Vara/Foro), ele manda sobre o texto."""
     if _GRAU3.search(texto_norm):
         return 3
+    o = _norm(orgao)
+    if _ORGAO_2.search(o):
+        return 2
+    if _ORGAO_1.search(o):
+        return 1
     if _GRAU2.search(texto_norm):
         return 2
     return 1
@@ -334,7 +375,7 @@ def classificar(intimacao: dict, titularidade: dict | None = None) -> dict:
 
     # Grau: recurso de sentenca nao cabe contra acordao (caso Romildo). O texto inteiro
     # (com cabecalho) diz o grau; o corpo, usado nos gatilhos, nao.
-    grau = grau_do_texto(tnorm)
+    grau = grau_do_texto(tnorm, orgao)
     troca_grau = _SO_NO_1O_GRAU.get(ramo, {}).get(ato)
     if grau == 2 and troca_grau and troca_grau in _CATALOGO.get(ramo, {}):
         evidencias.append("2o grau pelo cabecalho (Turma/Camara, 'intimadas do acordao' ou 'PJe 2o grau'): "
@@ -345,6 +386,27 @@ def classificar(intimacao: dict, titularidade: dict | None = None) -> dict:
     elif grau == 3 and ato in ('RECURSO ORDINARIO', 'RECURSO DE REVISTA', 'APELACAO'):
         avisos.append('Publicacao de tribunal superior: o catalogo nao decide o recurso cabivel sozinho '
                       '(agravo interno, embargos a SDI, RE): conferir nos autos')
+
+    if ato == 'EMBARGOS DE DECLARACAO' and _ED_JULGADOS.search(_corpo(tnorm)):
+        novo = recurso_apos_ed(ramo, grau, intimacao.get('tipo_ato') or '', tnorm)
+        if novo in _CATALOGO.get(ramo, {}):
+            evidencias.append("decisao que JULGA embargos de declaracao ja opostos: o cabivel e o recurso contra "
+                              "a decisao embargada ('%s'), com o prazo reiniciado por inteiro" % novo)
+            avisos.append('ED julgados: conferir nos autos qual decisao foi embargada (interlocutoria x sentenca), '
+                          'quem opos os embargos e se ha interesse em recorrer')
+            ato = novo
+            cfg = _CATALOGO[ramo][ato]
+            confianca = min(confianca, 0.7)   # abaixo do limiar: uma pessoa confere antes de cadastrar
+    elif ato == 'EMBARGOS DE DECLARACAO' and 'MANIFESTACAO SOBRE ED' in _CATALOGO.get(ramo, {}) and (
+            any(a == 'MANIFESTACAO SOBRE ED' for _, a, _, _ in ranking) or _ED_MANIFESTAR.search(_corpo(tnorm))):
+        # "intime-se a embargada para se manifestar sobre os ED opostos, que apontam omissao..." (23/11/2026):
+        # as palavras do ED descrevem os embargos JA opostos; o ato e responder a eles.
+        evidencias.append("despacho chama a embargada a se manifestar sobre embargos de declaracao ja opostos: "
+                          "'MANIFESTACAO SOBRE ED', nao novos embargos")
+        avisos.append('Conferir quem opos os embargos: se fomos nos, a manifestacao e da parte contraria')
+        ato = 'MANIFESTACAO SOBRE ED'
+        cfg = _CATALOGO[ramo][ato]
+        confianca = min(confianca, 0.75)
 
     dias_despacho = _dias_do_texto(texto)
 
@@ -614,4 +676,35 @@ if __name__ == '__main__':   # bateria rapida: python -m app.controladoria_motor
     ok += bom2
     casos.append(('audiencia passada nao e compromisso', '', None))
     print('%s  %-28s -> audiencia=%s' % ('OK  ' if bom2 else 'FALHA', 'audiencia passada', r2.get('audiencia')))
+    # ED julgados (caso Carla x Notre Dame, 16/11/2026): nao cabe ED de novo, cabe o recurso da decisao embargada
+    ed_jul = ('CUMPRIMENTO PROVISORIO DE SENTENCA No 0033845-46.2025.8.26.0002/SP EXEQUENTE : FULANA ADVOGADO(A) : X '
+              'EXECUTADO : EMPRESA S.A. DESPACHO/DECISAO Vistos. Os Embargos devem ser conhecidos, posto que tempestivos. '
+              'Contudo, sao improcedentes, eis que nao ha qualquer omissao, obscuridade, contradicao ou erro material na '
+              'decisao proferida. Ante o exposto, CONHECO E REJEITO os embargos de declaracao opostos por nao existirem '
+              'omissoes, contradicoes, erro material ou obscuridades a serem sanadas (artigo 1022 do NCPC). Int.')
+    ed_cab = ('Intime-se a embargada para, querendo, manifestar-se em 5 dias sobre os embargos de declaracao opostos, '
+              'que apontam omissao e contradicao na decisao. Int.')
+    for nome, it, esperado, conf_max in (
+            ('ED julgados no cumprimento -> AI', {'tribunal': 'TJSP', 'texto': ed_jul, 'tipo_ato': 'decisao_interlocutoria'},
+             'AGRAVO DE INSTRUMENTO', 0.7),
+            ('ED julgados vara trab -> RO', {'tribunal': 'TRT2', 'texto': ed_jul.replace('CUMPRIMENTO PROVISORIO DE SENTENCA', 'ATOrd')},
+             'RECURSO ORDINARIO', 0.7),
+            ('ED opostos -> manifestacao', {'tribunal': 'TJSP', 'texto': ed_cab, 'tipo_ato': 'despacho'},
+             'MANIFESTACAO SOBRE ED', 0.75),
+            ('omissao na sentenca -> ED', {'tribunal': 'TJSP', 'orgao': '3a Vara Civel', 'tipo_ato': 'sentenca', 'texto':
+             'SENTENCA. Julgo procedente o pedido. Ha erro material e omissao quanto aos honorarios; '
+             'cabem embargos de declaracao para corrigir a contradicao e a obscuridade do dispositivo.'},
+             'EMBARGOS DE DECLARACAO', 1),
+            ('acordao e-SAJ TJSP -> RESP', {'tribunal': 'TJSP', 'orgao': '14a Camara Direito Privado', 'texto':
+             'INTIMACAO DE ACORDAO No 0000781-63.2008.8.26.0318 - Apelacao Civel - Leme - Apelante: BANCO - Apelado: '
+             'FULANO - Deram provimento ao recurso. V. U. - APELACAO CIVEL. SENTENCA CASSADA. RECURSO PROVIDO.'},
+             'RECURSO ESPECIAL / EXTRAORDINARIO', 1)):
+        r = classificar(dict(it, processo='x', data='2026-11-16T03:00:00+00:00'))
+        if esperado is None:   # so prova que a regra nova nao dispara: nao vira recurso contra a decisao
+            bom = r.get('ato') not in ('AGRAVO DE INSTRUMENTO', 'APELACAO') and 'JULGA embargos' not in ' '.join(r['evidencias'])
+        else:
+            bom = r.get('ato') == esperado and r.get('confianca') <= conf_max
+        ok += bom
+        casos.append((nome, '', esperado))
+        print('%s  %-28s -> %s conf %s (esperado %s)' % ('OK  ' if bom else 'FALHA', nome, r.get('ato'), r.get('confianca'), esperado))
     print('\n%d/%d' % (ok, len(casos)))
