@@ -419,9 +419,12 @@ def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False, t
     # proprio card, e o caminho do .docx num campo da fase Revisao, que e a que fica aberta.
     if texto_peca:
         anot += '\n\n===== TEXTO DA PEÇA (rascunho para revisão) =====\n' + texto_peca[:60000]
-    revisao = '' if sem_peca else ('PEÇA PRONTA PARA REVISAR (%s)\nArquivo .docx no OneDrive: %s\nO texto inteiro está em '
-                                   '"Anotações da elaboração". Pendências marcadas entre colchetes.\n\n%s'
-                                   % (tipo, caminho_y or '-', resumo or ''))
+    datas = 'PRAZO FATAL: %s | PRAZO INTERNO (revisar, ajustar e protocolar até): %s' % (
+        _br_data(p['vencimento']), _br_data(p['fatal_interno']))
+    revisao = '' if sem_peca else ('PEÇA PRONTA PARA REVISAR (%s)\n%s\nAbrir a peça: %s\nArquivo no Y:: %s\n'
+                                   'O texto inteiro está em "Anotações da elaboração". Pendências marcadas entre '
+                                   'colchetes.\n\n%s' % (tipo, datas, link or '(link ainda não gerado)',
+                                                         caminho_y or '-', resumo or ''))
     dados = {'Tese jurídica': resumo or '', 'Anotações da elaboração': anot, 'Anotações da revisão': revisao,
              'Prazo fatal': _dt(p['vencimento']), 'Prazo interno': _dt(p['fatal_interno'])}
     # So link web: o Infinitum/navegador nao abre file:///Y:/... (virava "www.file.com", 23/11/2026).
@@ -436,7 +439,8 @@ def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False, t
     def gravar(d):
         vals = I.montar_valores(pid, d)
         if card:
-            I.atualizar_card(card['id'], vals)
+            # a data de entrega do card = prazo interno (a revisao tem de acabar antes do fatal)
+            I.atualizar_card(card['id'], vals, **({'due_date': _dt(p['fatal_interno'])} if p['fatal_interno'] else {}))
             if fase and card.get('phase_id') != fase:
                 I.mover_card(card['id'], fase)
             return card['id']
@@ -444,6 +448,8 @@ def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False, t
         resp = _env('INFINITUM_RESPONSAVEL_PADRAO')
         if resp:
             extra = {'assignee_ids': [resp], 'assigned_to': resp}
+        if p['fatal_interno']:
+            extra['due_date'] = _dt(p['fatal_interno'])
         d = dict(d, **{'Número do Processo': _digitos(p['processo']), 'Tribunal': p['tribunal'] or '',
                        'Órgão': it.get('orgao') or '', 'Tipo de publicação': 'Prazo',
                        'Resumo do texto': str(it.get('resumo') or '')[:2000]})
@@ -504,8 +510,13 @@ def _analise(m, acao, motivo):
         linhas.append('Por que não decidiu: %s' % motivo)
     linhas.append('Ato lido: %s | prazo de quem: %s | confiança %s' % (m.get('ato') or '?', m.get('titularidade') or '?',
                                                                     m.get('confianca')))
-    if m.get('vencimento'):
-        linhas.append('Vencimento: %s | prazo interno: %s' % (m.get('vencimento'), m.get('prazo_fatal_interno') or '-'))
+    if m.get('vencimento') and acao == 'CONCLUIR':
+        # concluida = sem prazo nosso (copia da parte contraria, ciencia): a data so serve para acompanhar
+        linhas.append('Prazo que corre para a OUTRA PARTE (só acompanhar, não é prazo nosso): vence %s'
+                      % _br_data(m.get('vencimento')))
+    elif m.get('vencimento'):
+        linhas.append('PRAZO FATAL: %s | PRAZO INTERNO (data de trabalho do escritório): %s'
+                      % (_br_data(m.get('vencimento')), _br_data(m.get('prazo_fatal_interno'))))
     sess = m.get('sessao') or {}
     if sess.get('data'):
         linhas.append('Sessão de julgamento: %s %s%s' % (sess['data'], sess.get('hora') or '', ' (virtual)' if sess.get('virtual') else ''))
@@ -516,7 +527,8 @@ def _analise(m, acao, motivo):
         linhas.append('Providência: %s' % conf['providencia'])
     if m.get('avisos'):
         linhas.append('Avisos: %s' % '; '.join(m['avisos'][:6]))
-    linhas += _prazos_e_tarefas(m)
+    if acao != 'CONCLUIR':
+        linhas += _prazos_e_tarefas(m)
     return '\n'.join(linhas)[:6000]
 
 
@@ -564,14 +576,14 @@ def _br_data(d):
     return '%s/%s/%s' % (d[8:10], d[5:7], d[:4]) if re.match(r'\d{4}-\d{2}-\d{2}', d) else '-'
 
 
-def garantir_card(c, it, m, acao, motivo):
-    """Card da publicacao no Infinitum, com responsavel e prazo. Idempotente por intimacao e acao.
-    Devolve texto curto para o relatorio."""
+def garantir_card(c, it, m, acao, motivo, forcar=False):
+    """Card da publicacao no Infinitum, com responsavel e prazo. Idempotente por intimacao e acao
+    (forcar=True regrava o card que ja existe). Devolve texto curto para o relatorio."""
     if acao not in _FASE_DA_ACAO:
         return ''
     _garantir_tabela_cards(c)
     ja = c.execute('SELECT card_id, acao FROM controladoria_cards WHERE intimacao_id=?', (int(it['id']),)).fetchone()
-    if ja and ja['acao'] == acao:
+    if ja and ja['acao'] == acao and not forcar:
         return 'card %s' % ja['card_id']
     I, pid, fases = _inf()
     if _cards_cache['lista'] is None or time.time() - _cards_cache['em'] > 600:
@@ -580,6 +592,9 @@ def garantir_card(c, it, m, acao, motivo):
     data = str(it.get('data') or '')[:10]
     resp, reg = _responsavel_do_processo(processo)
     venc, interno = m.get('vencimento'), m.get('prazo_fatal_interno')
+    if acao == 'CONCLUIR':
+        # concluida nao tem prazo NOSSO (ciencia ou copia da parte contraria): sem prazo fatal no card
+        venc = interno = None
     fase_alvo = fases.get(_FASE_DA_ACAO[acao])
     analise = _analise(m, acao, motivo)
 
@@ -619,7 +634,12 @@ def garantir_card(c, it, m, acao, motivo):
         if card.get('assignee_ids'):
             extra.pop('assignee_ids', None)
             extra.pop('assigned_to', None)          # nao tira o card de quem ja esta com ele
-        I.atualizar_card(card['id'], I.montar_valores(pid, {k: v for k, v in dados.items() if v}), **extra)
+        # Tudo num PUT so (24/11/2026): data de entrega gravada sozinha o Infinitum copia para "Prazo fatal" e
+        # "Prazo interno"; e valores sem a entrega zeram a entrega. Sem prazo nosso, os dois campos vao vazios.
+        dados = {k: v for k, v in dados.items() if v}
+        dados.update({'Prazo fatal': _dt(venc), 'Prazo interno': _dt(interno)})
+        extra.setdefault('due_date', None)
+        I.atualizar_card(card['id'], I.montar_valores(pid, dados), **extra)
         # so empurra para frente quem ainda esta na entrada; card que a equipe ja andou fica onde esta
         if fase_alvo and card.get('phase_id') == fases.get('1. Publicações') and fase_alvo != card.get('phase_id'):
             I.mover_card(card['id'], fase_alvo)
