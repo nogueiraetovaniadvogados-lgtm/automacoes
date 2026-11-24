@@ -176,6 +176,7 @@ def main():
     C._sugerir_conclusao(con, intims, motor)
 
     linhas, cont = [], {}
+    cp_cards = None
     for it in intims:
         m = motor.get(it.get('id')) or {}
         uf = C._uf_da_intimacao(it)
@@ -198,6 +199,17 @@ def main():
             con.commit()
         elif acao in ('CONCLUIR', 'CADASTRAR'):
             resultado = 'faria (simulacao)' if permitido or not aplicando else 'fora do nivel %s' % nivel
+        # TODA publicacao ganha card no Infinitum com o advogado responsavel (a equipe, 24/11/2026)
+        if aplicando and acao in ('CONCLUIR', 'CADASTRAR', 'HUMANO') and not resultado.startswith('FALHOU'):
+            try:
+                import controladoria_pecas as CP
+                if cp_cards is None:
+                    cp_cards = CP.con()
+                ref = CP.garantir_card(cp_cards, it, m, acao if (permitido or acao == 'HUMANO') else 'HUMANO', motivo)
+                resultado = (resultado + ' | ' if resultado else '') + ref
+            except Exception as e:
+                log.warning('card da intimacao %s: %s', it.get('id'), e)
+                resultado = (resultado + ' | ' if resultado else '') + 'card FALHOU: %s' % str(e)[:120]
         cont[acao] = cont.get(acao, 0) + 1
         linhas.append({
             'id': it.get('id'), 'processo': it.get('processo'), 'tribunal': it.get('tribunal'),

@@ -412,6 +412,146 @@ def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False):
         raise
 
 
+# ------------------------------------------------------------------ card de TODA publicacao
+# A equipe (24/11/2026): "tratar TODAS as publicacoes e intimacoes, sempre mandando os cards para os
+# advogados responsaveis e marcando na agenda". Cada publicacao (processo + data) tem um card no POP
+# Controladoria, com a leitura do motor, o prazo e o advogado responsavel do processo no Infinitum.
+# O que o motor nao decide sozinho vai para "1. Publicacoes" com o motivo: o advogado confere.
+
+_FASE_DA_ACAO = {'CONCLUIR': 'MERO EXPEDIENTE', 'CADASTRAR': '2. Em Análise / Estratégia', 'HUMANO': '1. Publicações'}
+_ROTULO_ACAO = {'CONCLUIR': 'CONCLUÍDA (ciência, sem prazo nosso)', 'CADASTRAR': 'PRAZO CADASTRADO pela controladoria',
+                'HUMANO': 'CONFERIR: o motor não decidiu sozinho'}
+_cards_cache = {'em': 0, 'lista': None, 'proc': {}, 'pub': {}}
+
+
+def _garantir_tabela_cards(c):
+    c.execute('CREATE TABLE IF NOT EXISTS controladoria_cards (intimacao_id INTEGER PRIMARY KEY, card_id TEXT, '
+              'acao TEXT, responsavel TEXT, em REAL)')
+
+
+def _responsavel_do_processo(numero):
+    """user_id do advogado responsavel pelo processo no Infinitum; sem ele, o responsavel padrao."""
+    if numero not in _cards_cache['proc']:
+        rid, reg = None, None
+        try:
+            import infinitum_dados as D
+            r = D.buscar_processo(numero=numero) or []
+            reg = r[0] if isinstance(r, list) and r else (r if isinstance(r, dict) else None)
+            rid = (reg or {}).get('responsible_id')
+        except Exception as e:
+            log.warning('responsavel do processo %s: %s', numero, e)
+        _cards_cache['proc'][numero] = (rid or _env('INFINITUM_RESPONSAVEL_PADRAO') or None, reg)
+    return _cards_cache['proc'][numero]
+
+
+def _analise(m, acao, motivo):
+    conf = m.get('conferencia') or {}
+    linhas = ['CONTROLADORIA AUTOMÁTICA (%s): %s' % (datetime.now().strftime('%d/%m/%Y %H:%M'), _ROTULO_ACAO.get(acao, acao))]
+    if acao == 'HUMANO':
+        linhas.append('Por que não decidiu: %s' % motivo)
+    linhas.append('Ato lido: %s | prazo de quem: %s | confiança %s' % (m.get('ato') or '?', m.get('titularidade') or '?',
+                                                                    m.get('confianca')))
+    if m.get('vencimento'):
+        linhas.append('Vencimento: %s | prazo interno: %s' % (m.get('vencimento'), m.get('prazo_fatal_interno') or '-'))
+    sess = m.get('sessao') or {}
+    if sess.get('data'):
+        linhas.append('Sessão de julgamento: %s %s%s' % (sess['data'], sess.get('hora') or '', ' (virtual)' if sess.get('virtual') else ''))
+    aud = m.get('audiencia') or {}
+    if aud.get('data'):
+        linhas.append('Audiência: %s %s' % (aud['data'], aud.get('hora') or ''))
+    if conf.get('providencia'):
+        linhas.append('Providência: %s' % conf['providencia'])
+    if m.get('avisos'):
+        linhas.append('Avisos: %s' % '; '.join(m['avisos'][:6]))
+    return '\n'.join(linhas)[:3500]
+
+
+def garantir_card(c, it, m, acao, motivo):
+    """Card da publicacao no Infinitum, com responsavel e prazo. Idempotente por intimacao e acao.
+    Devolve texto curto para o relatorio."""
+    if acao not in _FASE_DA_ACAO:
+        return ''
+    _garantir_tabela_cards(c)
+    ja = c.execute('SELECT card_id, acao FROM controladoria_cards WHERE intimacao_id=?', (int(it['id']),)).fetchone()
+    if ja and ja['acao'] == acao:
+        return 'card %s' % ja['card_id']
+    I, pid, fases = _inf()
+    if _cards_cache['lista'] is None or time.time() - _cards_cache['em'] > 600:
+        _cards_cache.update(lista=I.listar_cards(pid), em=time.time())
+    processo = it.get('processo') or ''
+    data = str(it.get('data') or '')[:10]
+    resp, reg = _responsavel_do_processo(processo)
+    venc, interno = m.get('vencimento'), m.get('prazo_fatal_interno')
+    fase_alvo = fases.get(_FASE_DA_ACAO[acao])
+    analise = _analise(m, acao, motivo)
+
+    # o card desta publicacao: mesmo processo e mesma data (o Infinitum ja cria parte deles)
+    alvo = _digitos(processo)
+    card = _cards_cache['pub'].get((alvo, data))      # irma da mesma publicacao, criada nesta rodada
+    for k in ([] if card else _cards_cache['lista']):
+        v = I.valores_por_rotulo(k) if k.get('values') else {}
+        num = _digitos(v.get('Número do Processo')) or _digitos(k.get('title'))
+        dk = str(v.get('Data') or '')
+        dk = ('%s-%s-%s' % (dk[6:10], dk[3:5], dk[:2])) if re.match(r'\d{2}/\d{2}/\d{4}', dk) else dk[:10]
+        if alvo and alvo in num and dk == data:
+            card = k
+            break
+    if not card and ja:
+        try:
+            card = I.buscar_card(ja['card_id'])
+        except Exception:
+            card = None
+
+    extra = {}
+    if resp:
+        extra = {'assignee_ids': [resp], 'assigned_to': resp}
+    if interno or venc:
+        extra['due_date'] = _dt(interno or venc)
+    elif acao == 'HUMANO':
+        # sem prazo calculado: a conferencia do advogado vence no proximo dia util
+        from app.controladoria_motor import feriados as FER
+        extra['due_date'] = _dt(FER.proximo_dia_util(date.today()).isoformat())
+    tipo_pub = 'Prazo' if venc else ('Mero expediente' if acao == 'CONCLUIR' else '')
+    if card:
+        dados = {'Anotações': analise}
+        if venc:
+            dados.update({'Prazo fatal': _dt(venc), 'Prazo interno': _dt(interno), 'Tipo de publicação': 'Prazo'})
+        elif acao == 'CONCLUIR':
+            dados['Tipo de publicação'] = 'Mero expediente'
+        if card.get('assignee_ids'):
+            extra.pop('assignee_ids', None)
+            extra.pop('assigned_to', None)          # nao tira o card de quem ja esta com ele
+        I.atualizar_card(card['id'], I.montar_valores(pid, {k: v for k, v in dados.items() if v}), **extra)
+        # so empurra para frente quem ainda esta na entrada; card que a equipe ja andou fica onde esta
+        if fase_alvo and card.get('phase_id') == fases.get('1. Publicações') and fase_alvo != card.get('phase_id'):
+            I.mover_card(card['id'], fase_alvo)
+        card_id, como = card['id'], 'atualizado'
+    else:
+        orgao = it.get('orgao') or ''
+        dados = {
+            'Título': 'Intimação | Proc. %s | %s/%s | %s' % (processo, it.get('tribunal') or '', orgao, data),
+            'Data': _dt(data), 'Número do Processo': alvo, 'Tipo de Comunicação': it.get('tipo_comunicacao') or 'Intimação',
+            'Tribunal': it.get('tribunal') or '', 'Órgão': orgao,
+            'Resumo do texto': str(it.get('texto') or it.get('resumo') or '')[:4000],
+            'Link da Publicação': it.get('link') or '',
+            'Tipo de publicação': tipo_pub,
+            'Prazo fatal': _dt(venc), 'Prazo interno': _dt(interno), 'Data do prazo (Estipulado pela IA)': venc or '',
+            'Análise IA': analise, 'O que será feito?': (m.get('conferencia') or {}).get('providencia') or '',
+        }
+        if reg and reg.get('record_id'):
+            dados['Processo'] = json.dumps({'record_id': reg['record_id'], 'title': reg.get('title')}, ensure_ascii=False)
+        titulo = '%s | Proc. %s | %s' % ((m.get('ato') or 'Intimação').title(), processo, (m.get('cliente') or '').title())
+        novo = I.criar_card(pid, titulo[:200], I.montar_valores(pid, {k: v for k, v in dados.items() if v}),
+                            fase_alvo, **extra)
+        card_id, como = (novo or {}).get('id'), 'criado'
+        if novo:
+            _cards_cache['pub'][(alvo, data)] = novo
+    c.execute('INSERT OR REPLACE INTO controladoria_cards (intimacao_id, card_id, acao, responsavel, em) VALUES (?,?,?,?,?)',
+              (int(it['id']), card_id, acao, resp, time.time()))
+    c.commit()
+    return 'card %s %s' % (card_id, como)
+
+
 def card_para_mero_expediente(processo, data_pub, motivo):
     """Intimacao concluida como ciencia: o card da publicacao vai para MERO EXPEDIENTE."""
     I, pid, fases = _inf()
