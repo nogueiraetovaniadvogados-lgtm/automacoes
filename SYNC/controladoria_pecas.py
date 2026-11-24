@@ -362,7 +362,7 @@ def _dt(d):
     return ('%sT00:00:00Z' % str(d)[:10]) if d else None
 
 
-def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False):
+def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False, texto_peca=''):
     I, pid, fases = _inf()
     it = json.loads(p['intimacao'])
     fase = fases.get(FASE_REVISAO)
@@ -375,7 +375,14 @@ def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False):
         anot = ('Peça redigida pela controladoria automática em %s (%s). Conferir antes do protocolo.\n'
                 'Arquivo: %s%s' % (datetime.now().strftime('%d/%m/%Y %H:%M'), tipo, caminho_y or '-',
                                    ('\nGoogle Drive: %s' % link) if link else ''))
-    dados = {'Tese jurídica': resumo or '', 'Anotações da elaboração': anot,
+    # A API do Infinitum nao anexa arquivo e o card nao abre o Y: (24/11/2026): o texto da peca vai no
+    # proprio card, e o caminho do .docx num campo da fase Revisao, que e a que fica aberta.
+    if texto_peca:
+        anot += '\n\n===== TEXTO DA PEÇA (rascunho para revisão) =====\n' + texto_peca[:60000]
+    revisao = '' if sem_peca else ('PEÇA PRONTA PARA REVISAR (%s)\nArquivo .docx no OneDrive: %s\nO texto inteiro está em '
+                                   '"Anotações da elaboração". Pendências marcadas entre colchetes.\n\n%s'
+                                   % (tipo, caminho_y or '-', resumo or ''))
+    dados = {'Tese jurídica': resumo or '', 'Anotações da elaboração': anot, 'Anotações da revisão': revisao,
              'Prazo fatal': _dt(p['vencimento']), 'Prazo interno': _dt(p['fatal_interno'])}
     # So link web: o Infinitum/navegador nao abre file:///Y:/... (virava "www.file.com", 23/11/2026).
     # Sem Drive, o caminho no Y: fica nas anotacoes.
@@ -640,7 +647,8 @@ def processar(c, p):
             log.warning('peca %s: %s', pid, aviso_g)
         if not pasta_ok:
             resumo = '[PASTA DO CLIENTE NAO ENCONTRADA NO Y: - arquivo na pasta da fila]\n' + resumo
-        card_id = atualizar_infinitum(p, link, caminho_y, resumo, tipo)
+        card_id = atualizar_infinitum(p, link, caminho_y, resumo, tipo,
+                                      texto_peca=(sai / 'PECA.txt').read_text(encoding='utf-8'))
         c.execute("UPDATE controladoria_pecas SET status='pronta', docx=?, caminho_y=?, link_drive=?, card_id=?, "
                   "resumo=?, erro=?, concluido_em=? WHERE id=?",
                   (str(docx), caminho_y, link, card_id, resumo, aviso_g, time.time(), pid))
