@@ -330,6 +330,46 @@ def subir_google(docx, nome, cliente):
     return f.get('webViewLink'), None
 
 
+# ------------------------------------------------------------------ OneDrive (link do arquivo no Y:)
+# O Y: e o OneDrive pessoal do escritorio (pasta BACKUP_NTM_2024) montado pelo RaiDrive. O rclone
+# (remote "ntm", autorizado em 24/11/2026) pede a Microsoft o link do proprio arquivo salvo no Y:,
+# que vai no campo de anexo do card. Sem copia em outro lugar: o advogado abre o arquivo do Y:.
+
+ONEDRIVE_REMOTE = _env('ONEDRIVE_REMOTE') or 'ntm:BACKUP_NTM_2024'
+Y_RAIZ = 'Y:\\'
+
+
+def _rclone():
+    exe = _env('RCLONE_EXE') or shutil.which('rclone')
+    if not exe:
+        achados = glob.glob(os.path.expandvars(r'%LOCALAPPDATA%\Microsoft\WinGet\Packages\Rclone*\*\rclone.exe'))
+        exe = achados[0] if achados else None
+    return exe
+
+
+def link_onedrive(caminho_y, docx=None, esperas=(0, 20, 40, 60)):
+    """(link, aviso). Link de visualizacao do arquivo do Y: no OneDrive. Espera o RaiDrive enviar o
+    arquivo; se nao chegar, o rclone envia o .docx para o mesmo lugar e gera o link."""
+    exe = _rclone()
+    if not exe:
+        return None, 'rclone nao instalado (link do OneDrive)'
+    if not caminho_y or not str(caminho_y).upper().startswith(Y_RAIZ.upper()):
+        return None, 'arquivo fora do Y: (sem link do OneDrive)'
+    remoto = '%s/%s' % (ONEDRIVE_REMOTE, str(caminho_y)[len(Y_RAIZ):].replace('\\', '/'))
+    cmd = [exe, 'link', remoto, '--onedrive-link-type', 'view', '--onedrive-link-scope', 'anonymous']
+    erro = ''
+    for i, s in enumerate(esperas):
+        time.sleep(s)
+        if i == len(esperas) - 1 and docx and Path(docx).exists():   # RaiDrive nao enviou: envia direto
+            subprocess.run([exe, 'copyto', str(docx), remoto], capture_output=True, timeout=300)
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
+        link = (r.stdout or '').strip().splitlines()[-1:] or ['']
+        if r.returncode == 0 and link[0].startswith('http'):
+            return link[0], None
+        erro = (r.stderr or '').strip()[-200:]
+    return None, 'OneDrive sem link: %s' % erro
+
+
 # ------------------------------------------------------------------ Infinitum
 
 def _inf():
@@ -374,7 +414,7 @@ def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False, t
     else:
         anot = ('Peça redigida pela controladoria automática em %s (%s). Conferir antes do protocolo.\n'
                 'Arquivo: %s%s' % (datetime.now().strftime('%d/%m/%Y %H:%M'), tipo, caminho_y or '-',
-                                   ('\nGoogle Drive: %s' % link) if link else ''))
+                                   ('\nLink do arquivo: %s' % link) if link else ''))
     # A API do Infinitum nao anexa arquivo e o card nao abre o Y: (24/11/2026): o texto da peca vai no
     # proprio card, e o caminho do .docx num campo da fase Revisao, que e a que fica aberta.
     if texto_peca:
@@ -688,12 +728,17 @@ def processar(c, p):
             pasta.mkdir(parents=True, exist_ok=True)
             caminho_y = str(pasta / nome)
             shutil.copyfile(docx, caminho_y)
-        # Google Drive
+        # Link do arquivo no OneDrive (o proprio .docx do Y:); sem ele, tenta o Google Drive
         link, aviso_g = None, None
         try:
-            link, aviso_g = subir_google(docx, nome, cliente)
+            link, aviso_g = link_onedrive(caminho_y, docx)
         except Exception as e:
-            aviso_g = 'Google Drive falhou: %s' % str(e)[:200]
+            aviso_g = 'OneDrive falhou: %s' % str(e)[:200]
+        if not link and google_disponivel():
+            try:
+                link, aviso_g = subir_google(docx, nome, cliente)
+            except Exception as e:
+                aviso_g = 'Google Drive falhou: %s' % str(e)[:200]
         if aviso_g:
             log.warning('peca %s: %s', pid, aviso_g)
         if not pasta_ok:
