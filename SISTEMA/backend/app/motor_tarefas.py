@@ -417,12 +417,24 @@ def etapas_da_sustentacao(comp, hoje, uf=''):
     roteiro pela automacao e estudo da Advogada. O cliente nao comparece."""
     dia = _data((comp or {}).get('data'))
     quando = _br(dia) if dia else 'data a conferir na Agenda'
+    # a equipe (24/11/2026): a pauta pede DECISAO de estrategia - sustentacao oral e/ou memoriais -
+    # e a equipe tem de ser alertada para decidir a tempo. Limite: 2 uteis antes da sessao, que
+    # cobre o destaque/oposicao de 48h do julgamento virtual e a entrega dos memoriais.
+    limite = FER.prazo_interno(dia, 2) if dia else None
+    virtual = bool((comp or {}).get('virtual')) or 'virtual' in _norm(str((comp or {}).get('modalidade') or '')).lower()
+    como = ('Sessao VIRTUAL: para sustentar e preciso pedir destaque/oposicao ao julgamento virtual (ou enviar a '
+            'sustentacao gravada) ate 48h antes do inicio. ' if virtual else
+            'Sessao presencial/telepresencial: inscrever a sustentacao no prazo do regimento do tribunal. ')
     etapas = [_etapa(1, 'INSCRICAO SUSTENTACAO ORAL', 'Advogada', hoje,
-                     'Sessao de julgamento em %s. Se formos sustentar: inscrever no prazo do proprio tribunal (regimento) '
-                     'e cadastrar a sessao na Agenda. O cliente nao comparece e so e avisado do resultado. Nao vamos '
-                     'sustentar: tire as etapas do roteiro no fechamento.' % quando,
-                     prazo_fatal=dia.isoformat() if dia else None, condicional=True,
-                     rotulo='INSCRICAO PARA SUSTENTACAO ORAL')]
+                     'PAUTA DE JULGAMENTO em %s. DECIDIR A ESTRATEGIA ate %s: (a) sustentacao oral? (b) memoriais aos '
+                     'gabinetes? (c) as duas? (d) nenhuma? %sA MINUTA DOS MEMORIAIS ja e redigida pela producao automatica '
+                     '(reaproveitando as razoes/contrarrazoes do processo) e chega no card do Infinitum e na pasta do '
+                     'cliente no Y:. Se for apresentar: revisar e protocolar/enviar aos gabinetes antes da sessao. '
+                     'Registrar a decisao aqui embaixo. O cliente nao comparece e so e avisado do resultado. Sem '
+                     'sustentacao nem memoriais: tire as etapas do roteiro no fechamento.'
+                     % (quando, _br(limite) if limite else 'a vespera da sessao', como),
+                     prazo_fatal=(limite or dia).isoformat() if (limite or dia) else None,
+                     rotulo='PAUTA: DEFINIR SUSTENTACAO ORAL E/OU MEMORIAIS')]
     etapas.extend(etapas_do_roteiro('sustentacao', dia, hoje, uf, 2))
     return etapas
 
@@ -604,6 +616,10 @@ def cadeia_para(motor, intimacao, hoje=None, uf=''):
     if 'AUDIENCIA' in ato:
         etapas.extend(etapas_da_audiencia(m.get('cliente') or intimacao.get('cliente'), conf, _compromisso(intimacao), hoje, uf))
         return saida('audiencia')
+    if ato == 'PAUTA DE JULGAMENTO' and m.get('sessao'):
+        # o classificador ja leu a sessao (data, hora, virtual): vencimento = dia da sessao
+        etapas.extend(etapas_da_sustentacao(m['sessao'], hoje, uf))
+        return saida('sustentacao')
     if ('PAUTA' in ato or 'JULGAMENTO' in ato or 'SUSTENTACAO' in ato or _PAUTA.search(falado)) and not m.get('copia_de_adverso') \
             and not venc:
         etapas.extend(etapas_da_sustentacao(_compromisso(intimacao), hoje, uf))
@@ -2359,7 +2375,7 @@ if __name__ == '__main__':
            'compromisso': {'tem': True, 'tipo': 'julgamento', 'data': '2026-10-20'}}
     rsu = cadeia_para(msu, isu, hoje=hoje)
     assert rsu['familia'] == 'sustentacao' and tipos(rsu) == ['INSCRICAO SUSTENTACAO ORAL', 'ROTEIRO', 'ESTUDAR ROTEIRO'], rsu
-    assert [e['para'] for e in rsu['etapas']] == ['Advogada', 'Assistente', 'Advogada'] and rsu['etapas'][0]['condicional']
+    assert [e['para'] for e in rsu['etapas']] == ['Advogada', 'Assistente', 'Advogada'] and not rsu['etapas'][0].get('condicional') and 'MEMORIAIS' in rsu['etapas'][0]['texto']
     assert rsu['etapas'][2]['data'] == '2026-10-15' and 'sustentacao oral' in rsu['etapas'][1]['texto']
     assert cadeia_para(dict(msu, copia_de_adverso=True), isu, hoje=hoje)['familia'] == 'ciencia'
     assert cadeia_para(dict(mau, ato='PERICIA DESIGNADA'), iau, hoje=hoje)['etapas'] == []

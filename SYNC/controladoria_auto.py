@@ -135,6 +135,7 @@ def aplicar(con, it, m, acao, motivo, etapas, uf):
         txt = '%d tarefa(s)%s' % (len(rel.get('tarefas') or []),
                                   ', PF %s' % rel['pf'].get('evento_id') if rel.get('pf') else '')
         # o que e peca (trilha PECA ou peticao de meio) vai para a fila da producao automatica
+        # pauta de julgamento tambem: a producao redige os MEMORIAIS e a equipe decide se apresenta (24/11/2026)
         if m.get('trilha') in ('PECA', 'MEIO'):
             import controladoria_pecas as CP
             cp = CP.con()

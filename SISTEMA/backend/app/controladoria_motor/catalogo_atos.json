@@ -570,6 +570,17 @@
     "coube por distribuicao",
     "relator o(a) desembargador"
    ]
+  },
+  "PAUTA DE JULGAMENTO": {
+   "trilha": "MEIO",
+   "dias": null,
+   "contagem": "uteis",
+   "fonte_prazo": "sessao",
+   "fatal": false,
+   "base_legal": "art. 937 CPC; art. 7o Lei 8.906/94; Res. CNJ 591/2024; regimento interno do tribunal",
+   "titularidade_padrao": "NOSSO",
+   "observacao": "Pauta de julgamento: nao abre prazo de peca. Definir a estrategia (sustentacao oral e/ou memoriais) antes da sessao.",
+   "gatilhos": []
   }
  },
  "civel": {
@@ -949,6 +960,17 @@
     "audiencia inaugural"
    ],
    "observacao": "Nunca fecha sozinha: vai para a agenda (POP 18). Copia da parte contraria e so duplicata."
+  },
+  "PAUTA DE JULGAMENTO": {
+   "trilha": "MEIO",
+   "dias": null,
+   "contagem": "uteis",
+   "fonte_prazo": "sessao",
+   "fatal": false,
+   "base_legal": "art. 937 CPC; art. 7o Lei 8.906/94; Res. CNJ 591/2024; regimento interno do tribunal",
+   "titularidade_padrao": "NOSSO",
+   "observacao": "Pauta de julgamento: nao abre prazo de peca. Definir a estrategia (sustentacao oral e/ou memoriais) antes da sessao.",
+   "gatilhos": []
   }
  },
  "abre_junto": {

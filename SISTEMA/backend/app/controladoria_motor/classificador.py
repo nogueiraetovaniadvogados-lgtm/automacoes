@@ -189,6 +189,45 @@ _ED_MANIFESTAR = re.compile(
     r'\bcontrarrazo\w* aos embargos\b')
 
 
+# Pauta de julgamento de TRT/TRF/TJ (a equipe, 24/11/2026): a publicacao nao abre prazo de peca, mas pede
+# DECISAO: vamos sustentar oralmente (inscricao, ou destaque/oposicao ao julgamento virtual ate 48h antes)
+# e/ou apresentar memoriais? Antes o e-SAJ virava "EMBARGOS DE DECLARACAO" (a pauta dos ED) ou
+# "AGRAVO DE INSTRUMENTO" com 5 dias inventados, e a pauta do PJe-TRT caia em ciencia.
+_PAUTA_JULG = re.compile(
+    r'pauta de julgamentos?|edital ?-? ?pauta|edital de pauta|incluid[oa]s? (?:na|em) pauta|'
+    r'data da pauta|numero da pauta|data da sessao')
+# ata/certidao de julgamento e acordao falam de sessao e pauta, mas ja sao o resultado
+_NAO_PAUTA = re.compile(r'extrato de ata|certidao de julgamento|resultado do julgamento|\bacordam\b|'
+                        r'\bementa\b|deram provimento|negaram provimento|por unanimidade|por maioria')
+_DATA_SESSAO = re.compile(r'(\d{2})/(\d{2})/(\d{4})(?:[^0-9]{0,14}?(\d{1,2})[:h](\d{2}))?')
+
+
+_CONSTRICAO = re.compile(
+    r'\b(?:determino|defiro|proceda-?se|realize-?se|procedam-?se)\b[^.]{0,80}?'
+    r'(?:convenios|sisbajud|bacenjud|renajud|infojud|cnib|serasajud|bloqueio|penhora on ?-?line)')
+_ORDEM_AO_EXEQUENTE = re.compile(
+    r'(?:intime-?se|intimem-?se|manifeste-?se|diga|indique)\b[^.]{0,30}?\b(?:o|a)s? (?:exequente|reclamante|autor|autora|credor)')
+
+
+def pauta_de_julgamento(texto_norm: str, orgao: str = '', disp=None) -> dict | None:
+    """Sessao de julgamento de 2o grau em pauta: {'data','hora','virtual'} ou None.
+    A data e a primeira do texto que nao seja anterior a disponibilizacao."""
+    if not _PAUTA_JULG.search(texto_norm) or _NAO_PAUTA.search(texto_norm):
+        return None
+    o = _norm(orgao)
+    if _ORGAO_1.search(o) and not _ORGAO_2.search(o):
+        return None                      # vara: "pauta" e de audiencia
+    base = str(disp or '')[:10]
+    for m in _DATA_SESSAO.finditer(texto_norm):
+        d, mes, a = m.group(1), m.group(2), m.group(3)
+        iso = '%s-%s-%s' % (a, mes, d)
+        if base and iso < base:
+            continue
+        hora = ('%02d:%s' % (int(m.group(4)), m.group(5))) if m.group(4) else ''
+        return {'data': iso, 'hora': hora, 'virtual': 'virtual' in texto_norm}
+    return None
+
+
 def recurso_apos_ed(ramo: str, grau: int, tipo_ato: str, texto_norm: str) -> str:
     """Recurso contra a decisao embargada, depois que os ED foram julgados."""
     tipo = _norm(tipo_ato)
@@ -408,7 +447,38 @@ def classificar(intimacao: dict, titularidade: dict | None = None) -> dict:
         cfg = _CATALOGO[ramo][ato]
         confianca = min(confianca, 0.75)
 
-    dias_despacho = _dias_do_texto(texto)
+    # Pauta de julgamento (a equipe, 24/11/2026): ato proprio, vencimento = dia da sessao. A cadeia
+    # (motor_tarefas.etapas_da_sustentacao) pede a decisao sobre sustentacao oral e/ou memoriais.
+    sessao = None
+    if grau >= 2 or _ORGAO_2.search(_norm(orgao)) or not _ORGAO_1.search(_norm(orgao)):
+        sessao = pauta_de_julgamento(tnorm, orgao, disp)
+    if sessao and 'PAUTA DE JULGAMENTO' in _CATALOGO.get(ramo, {}):
+        evidencias.append("pauta de julgamento: sessao %sem %s%s (o ato '%s' dos gatilhos e o recurso que sera julgado)"
+                          % ('virtual ' if sessao['virtual'] else '', sessao['data'],
+                             (' ' + sessao['hora']) if sessao['hora'] else '', ato))
+        avisos.append('Pauta de julgamento: definir a estrategia (sustentacao oral e/ou memoriais). '
+                      + ('Sessao virtual: a sustentacao pede destaque/oposicao ao julgamento virtual ate 48h antes.'
+                         if sessao['virtual'] else 'Inscrever a sustentacao no prazo do regimento do tribunal.'))
+        ato = 'PAUTA DE JULGAMENTO'
+        cfg = _CATALOGO[ramo][ato]
+        confianca = 0.9
+        ranking = ranking or [(1.0, ato, cfg, ['pauta de julgamento'])]
+
+    # Constricao determinada a favor do nosso cliente exequente (Ana Paula 1000489-50, 24/11/2026):
+    # "determino a realizacao dos convenios de praxe" (SISBAJUD/RENAJUD...) sem prazo para nos e ciencia;
+    # quem age e o juizo. Contra o nosso cliente executado, nao: fica para a equipe avisar o cliente.
+    if not sessao and ato in ('MANIFESTACAO GENERICA', 'CIENCIA / MERO EXPEDIENTE') and _CONSTRICAO.search(_corpo(tnorm)) \
+            and _dias_do_texto(texto) is None and not _ORDEM_AO_EXEQUENTE.search(_corpo(tnorm)):
+        if nosso_polo == 'ativo' and 'CIENCIA / MERO EXPEDIENTE' in _CATALOGO.get(ramo, {}):
+            evidencias.append("constricao determinada pelo juizo (convenios/SISBAJUD/RENAJUD) e nosso cliente e o "
+                              "exequente: ciencia, quem age e o juizo")
+            ato = 'CIENCIA / MERO EXPEDIENTE'
+            cfg = _CATALOGO[ramo][ato]
+            confianca = max(confianca, 0.8)
+        elif nosso_polo == 'passivo':
+            avisos.append('Constricao (bloqueio/convenios) determinada CONTRA o nosso cliente: avisar o cliente')
+
+    dias_despacho = None if sessao else _dias_do_texto(texto)
 
     # Despacho composto (a equipe, 06/10/2026): audiencia designada E prazo em dias no mesmo
     # texto. O prazo (que vence e preclui) manda na cadeia; a audiencia vira compromisso paralelo
@@ -481,6 +551,8 @@ def classificar(intimacao: dict, titularidade: dict | None = None) -> dict:
     elif fonte == 'audiencia':
         dias = None
         avisos.append('Prazo vinculado a audiencia — conferir data da audiencia')
+    elif fonte == 'sessao':
+        dias = None
     elif _e_ciencia:
         # Ciencia nao tem prazo nosso. Se o texto cita dias, o prazo e de outro
         # (Michele regularizar a representacao em 5 dias, 76144) e nao vira
@@ -516,9 +588,18 @@ def classificar(intimacao: dict, titularidade: dict | None = None) -> dict:
                 pp.pop('avisos', None)
                 prazos.append(pp)
                 evidencias.append(f"prazo paralelo '{par_nome}' aberto junto com '{ato}'")
+    if sessao and ato == 'PAUTA DE JULGAMENTO':
+        # o "prazo" e a sessao; o interno (2 uteis antes) e o limite da decisao, que cobre
+        # o destaque/oposicao de 48h do julgamento virtual e a entrega dos memoriais
+        from . import feriados as FER
+        interno = FER.prazo_interno(sessao['data'], 2)
+        prazos = [{'ato': ato, 'fonte_prazo': 'sessao', 'fatal': False, 'base_legal': base_legal, 'paralelo': False,
+                   'dias': None, 'contagem': None, 'disponibilizacao': str(disp or '')[:10],
+                   'vencimento': sessao['data'], 'prazo_fatal_interno': interno.isoformat() if interno else None,
+                   'hora': sessao['hora'], 'virtual': sessao['virtual']}]
     # despacho composto: audiencia designada junto com outro prazo (a equipe, 06/10/2026)
     audiencia = None
-    if 'AUDIENCIA' not in ato and 'PERICIA' not in ato and not _so_cabecalho(tnorm):
+    if 'AUDIENCIA' not in ato and 'PERICIA' not in ato and not sessao and not _so_cabecalho(tnorm):
         audiencia = _audiencia_no_texto(texto, orgao, tnorm, ramo, disp)
         if audiencia:
             evidencias.append("audiencia%s designada para %s%s lida junto com '%s' (despacho composto)" % (
@@ -618,6 +699,7 @@ def classificar(intimacao: dict, titularidade: dict | None = None) -> dict:
         'acao_automatica_permitida': bool(acionavel and confianca >= LIMIAR_CONFIANCA and titularidade_val == 'NOSSO'),
         'prazos': prazos,
         'audiencia': audiencia,
+        'sessao': sessao,
         'evidencias': evidencias,
         'avisos': avisos,
     }
@@ -698,9 +780,25 @@ if __name__ == '__main__':   # bateria rapida: python -m app.controladoria_motor
             ('acordao e-SAJ TJSP -> RESP', {'tribunal': 'TJSP', 'orgao': '14a Camara Direito Privado', 'texto':
              'INTIMACAO DE ACORDAO No 0000781-63.2008.8.26.0318 - Apelacao Civel - Leme - Apelante: BANCO - Apelado: '
              'FULANO - Deram provimento ao recurso. V. U. - APELACAO CIVEL. SENTENCA CASSADA. RECURSO PROVIDO.'},
-             'RECURSO ESPECIAL / EXTRAORDINARIO', 1)):
+             'RECURSO ESPECIAL / EXTRAORDINARIO', 1),
+            # pauta de julgamento (24/11/2026): e-SAJ dos ED (virava ED em 5 dias) e PJe-TRT (virava ciencia)
+            ('pauta virtual e-SAJ dos ED', {'tribunal': 'TJSP', 'orgao': '10a Camara Direito Privado', 'texto':
+             'DESPACHO No 1001409-83.2026.8.26.0001/50000 - Embargos de Declaracao Civel - Embargte: FULANA - '
+             'SESSAO DE JULGAMENTO NA MODALIDADE VIRTUAL - Data da pauta: 03/12/2026 as 00:01 Numero da pauta: 381 '
+             'Eventuais pedidos de DESTAQUE ate 48 horas antes do inicio da sessao. Omissao, contradicao.'},
+             'PAUTA DE JULGAMENTO', 1),
+            ('pauta presencial PJe-TRT', {'tribunal': 'TRT2', 'orgao': '19a Turma', 'texto':
+             'PAUTA DE JULGAMENTO Orgao julgador: 19a Turma Sessao: Ordinaria Presencial Data da sessao: 17/12/2026, '
+             'as 13:15 ficam as partes e seus advogados intimados de que o processo foi incluido na pauta.'},
+             'PAUTA DE JULGAMENTO', 1),
+            ('extrato de ata nao e pauta', {'tribunal': 'TJSP', 'orgao': '5a Camara Direito Privado', 'texto':
+             'EXTRATO DE ATA DA SESSAO VIRTUAL de 28/11/2026 a 05/12/2026 Agravo de Instrumento. Negaram provimento '
+             'ao recurso. V.U. pauta de julgamento'},
+             '!PAUTA DE JULGAMENTO', 1)):
         r = classificar(dict(it, processo='x', data='2026-11-16T03:00:00+00:00'))
-        if esperado is None:   # so prova que a regra nova nao dispara: nao vira recurso contra a decisao
+        if esperado and esperado.startswith('!'):   # so prova que NAO virou este ato
+            bom = r.get('ato') != esperado[1:]
+        elif esperado is None:   # so prova que a regra nova nao dispara: nao vira recurso contra a decisao
             bom = r.get('ato') not in ('AGRAVO DE INSTRUMENTO', 'APELACAO') and 'JULGA embargos' not in ' '.join(r['evidencias'])
         else:
             bom = r.get('ato') == esperado and r.get('confianca') <= conf_max

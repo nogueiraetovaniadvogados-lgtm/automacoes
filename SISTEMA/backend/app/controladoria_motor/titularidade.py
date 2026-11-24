@@ -253,6 +253,16 @@ def copia_de(destinatarios, clientes, adversos, limiar=0.34):
         return 'cliente'
     if bate_adv:
         return 'adverso'
+    # (b) cliente conhecido e NENHUM intimado parecido com ele (Ana Paula x SELT/CSS/REMO, 24/11/2026:
+    # os reus listados no rodape do PJe nao estavam cadastrados como adversos)
+    # So com nome que parece nome de parte: o "Destinatario:" as vezes pega um trecho do texto
+    # ("final da prova. com efeito e com grande propriedade...", 354555) e isso nao prova nada.
+    def _parece_nome(d):
+        d = str(d or '').strip()
+        return 3 < len(d) <= 70 and len(d.split()) <= 8 and not re.search(r'[.,;:]\s+\w+\s+\w+\s+\w+', d.replace('ltda.', 'ltda'))
+    if cli and all(_parece_nome(d) for d in destinatarios) and \
+            all(max(semelhanca(d, c) for c in cli) < 0.15 for d in destinatarios):
+        return 'adverso'
     return None
 
 _MARCA_ADVERSA = 'PARTE CONTRARIA'

@@ -60,8 +60,9 @@ _TABELA = {
         'Abrir o POP 18 de audiencia.',
         'AVISAR CLIENTE AUDIENCIA', 'Advogada', 6),
     'PAUTA DE JULGAMENTO': (
-        'Registrar a sessao na agenda e inscrever a sustentacao oral no prazo '
-        'do proprio tribunal, que nao e o prazo dos autos.',
+        'Alertar a equipe e DEFINIR A ESTRATEGIA antes da sessao: sustentacao oral (inscricao no prazo '
+        'do regimento; no julgamento virtual, destaque/oposicao ate 48h antes) e/ou memoriais aos '
+        'gabinetes. Registrar a sessao na agenda. Nao e prazo de peca.',
         'SUSTENTACAO ORAL TRT TRF TJ', 'Dra. Advogada sustenta e inscreve', 4),
     'MANIFESTACAO GENERICA': (
         'Peticao de meio no prazo do despacho. Conferir o polo antes: e a '
