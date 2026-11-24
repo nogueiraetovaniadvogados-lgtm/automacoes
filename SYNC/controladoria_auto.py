@@ -177,6 +177,7 @@ def main():
 
     linhas, cont = [], {}
     cp_cards = None
+    hoje = datetime.now().strftime('%Y-%m-%d')
     for it in intims:
         m = motor.get(it.get('id')) or {}
         uf = C._uf_da_intimacao(it)
@@ -200,7 +201,9 @@ def main():
         elif acao in ('CONCLUIR', 'CADASTRAR'):
             resultado = 'faria (simulacao)' if permitido or not aplicando else 'fora do nivel %s' % nivel
         # TODA publicacao ganha card no Infinitum com o advogado responsavel (a equipe, 24/11/2026)
-        if aplicando and acao in ('CONCLUIR', 'CADASTRAR', 'HUMANO') and not resultado.startswith('FALHOU'):
+        # so as publicacoes DO DIA (a equipe, 24/11/2026): o acervo antigo nao vira card em massa
+        do_dia = hoje in (str(it.get('data') or '')[:10], str(it.get('capturado_em') or '')[:10])
+        if aplicando and do_dia and acao in ('CONCLUIR', 'CADASTRAR', 'HUMANO') and not resultado.startswith('FALHOU'):
             try:
                 import controladoria_pecas as CP
                 if cp_cards is None:
