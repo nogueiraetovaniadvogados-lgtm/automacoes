@@ -74,6 +74,12 @@ ESC_CONFIG_ENV=/opt/escritorio/config/.env
 # nunca apaga. Andamentos: ultimos 15 dias. Remapeado em 19/11/2026 para a estrutura nova.
 30 4 * * *  cd $R && flock -n /tmp/esc-advbox-infinitum.lock $PY SYNC/advbox_infinitum.py --executar >> /var/log/escritorio/advbox-infinitum.log 2>&1
 
+# ---------- INFINITUM: cache local dos bancos (INTEGRACOES/infinitum_dados.py) ----------
+# A API nao filtra (100 por pagina): telas e robos leem do cache. A cada 15 min so o que mudou;
+# de madrugada (depois do sync das 4h30) a releitura completa, que pega edicao/exclusao.
+*/15 6-22 * * *  cd $R && flock -n /tmp/esc-infinitum-cache.lock $PY INTEGRACOES/infinitum_dados.py atualizar >> /var/log/escritorio/infinitum-cache.log 2>&1
+15 5 * * *  cd $R && flock -w 600 /tmp/esc-infinitum-cache.lock $PY INTEGRACOES/infinitum_dados.py atualizar --tudo >> /var/log/escritorio/infinitum-cache.log 2>&1
+
 # ---------- AGENDA / AUDIENCIAS ----------
 #50 6 * * *  cd $R/SISTEMA/backend && flock -n /tmp/esc-audiencias.lock $PY $R/audiencias_vigia.py --aplicar >> /var/log/escritorio/audiencias.log 2>&1
 #0 13 * * 5  cd $R/SISTEMA/backend && $PY $R/relatorio_audiencias_semana.py --enviar >> /var/log/escritorio/relatorio-audiencias.log 2>&1
