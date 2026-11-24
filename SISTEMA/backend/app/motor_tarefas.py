@@ -336,6 +336,48 @@ def etapas_da_peca(ato, quem_produz, venc, interno, hoje, uf='', providencia='',
     return etapas
 
 
+# Recurso com preparo (a equipe, 24/11/2026): "sentenca parcialmente procedente: alem dos prazos processuais (5 dos
+# ED, 8 do RO), e preciso um prazo INTERNO para gerar as guias e pagar o deposito recursal". Pagar e comprovar vale
+# dentro do prazo do recurso (art. 7o Lei 5.584/70 e Sum. 245 TST; art. 1.007 CPC): sem isso, desercao.
+_PREPARO = {
+    'trabalhista': re.compile(r'RECURSO ORDINARIO|RECURSO DE REVISTA|AGRAVO DE INSTRUMENTO|AGRAVO DE PETICAO|RECURSO ADESIVO'),
+    'civel': re.compile(r'APELACAO|AGRAVO DE INSTRUMENTO|RECURSO ESPECIAL|EXTRAORDINARIO|RECURSO INOMINADO|RECURSO ADESIVO'),
+}
+
+
+def etapa_de_preparo(ato, ramo, nosso_polo, venc, interno, hoje, uf='', limite=None):
+    """Etapa EMITIR GUIA do recurso (deposito recursal + custas no trabalho; preparo no civel), datada 1 dia util
+    antes do fatal interno do RECURSO. Condicional quando a regra pode nao valer para o nosso cliente."""
+    a = _norm(ato)
+    rx = _PREPARO.get(ramo)
+    if not rx or not rx.search(a) or _NAO_RECURSAL.search(a) or not interno:
+        return None
+    # `limite`: protocolo mais cedo da cadeia (com ED em paralelo, a cadeia e datada pelos ED)
+    dia = max(_data(uteis_antes(limite or interno, 1, uf)), hoje)
+    fatal = venc.isoformat() if venc else None
+    quando = 'Pagar e comprovar ate %s (fatal interno do recurso %s; processual %s).' % (
+        _br(dia), _br(interno), _br(venc) if venc else '-')
+    if ramo == 'trabalhista':
+        if nosso_polo == 'passivo':
+            texto = ('Recurso da RECLAMADA: gerar e pagar o DEPOSITO RECURSAL (art. 899 CLT; no agravo de instrumento, 50%% '
+                     'do deposito do recurso denegado, art. 899, par. 7o; metade para ME/EPP e entidade sem fins lucrativos, '
+                     'isencao para beneficiario da justica gratuita, entidade filantropica e empresa em recuperacao '
+                     'judicial, par. 9o e 10) e as CUSTAS (art. 789, par. 1o CLT: 2%% do valor da condenacao fixado na '
+                     'sentenca). Mandar as guias ao cliente/financeiro e juntar os comprovantes com o recurso. %s' % quando)
+            cond, rot = False, 'GUIAS: DEPOSITO RECURSAL E CUSTAS'
+        else:
+            texto = ('Recurso do RECLAMANTE: em regra nao ha deposito recursal, e as custas so existem se a sentenca as '
+                     'fixou contra o reclamante sem justica gratuita (parcialmente procedente: as custas sao da reclamada). '
+                     'Conferir na sentenca; se houver custas, gerar e pagar a guia. Sem custas, tire esta etapa. %s' % quando)
+            cond, rot = True, 'GUIAS: CUSTAS DO RECURSO (se houver)'
+    else:
+        texto = ('PREPARO do recurso (art. 1.007 CPC): gerar e pagar as custas do recurso e o porte de remessa e retorno, '
+                 'quando houver, e juntar o comprovante na interposicao. Cliente com justica gratuita: tire esta etapa. %s'
+                 % quando)
+        cond, rot = True, 'GUIAS: PREPARO DO RECURSO'
+    return _etapa(0, TT.EMITIR_GUIA, 'Advogada', dia, texto, prazo_fatal=fatal, condicional=cond, rotulo=rot)
+
+
 def etapas_do_alvara(hoje, evidencia, uf=''):
     """Alvara expedido ou valor liberado: calculo previo dos honorarios (automacao)
     e a tarefa da Titular de validar, lancar a receita e pagar o cliente."""
@@ -676,6 +718,12 @@ def cadeia_para(motor, intimacao, hoje=None, uf=''):
                     'recurso direto, o processual e %s.' % (_br(venc_c), _br(venc)))
             pf_par = pf_de(interno_c, 'EMBARGOS DE DECLARACAO', venc_c, ':ed')
     etapas.extend(etapas_da_peca(ato, quem_produz, venc_c, interno_c, hoje, uf, conf.get('providencia') or '', nota=nota))
+    # recurso com preparo: guias e deposito recursal com prazo interno proprio, antes do protocolo (24/11/2026)
+    guia = etapa_de_preparo(ato, m.get('ramo') or '', m.get('nosso_polo'), venc, interno, hoje, uf, limite=interno_c)
+    if guia:
+        guia['etapa'] = len(etapas)              # entra antes do protocolo, que e a ultima
+        etapas[-1]['etapa'] = len(etapas) + 1
+        etapas.insert(len(etapas) - 1, guia)
     return saida('peca', pf=pf_de(interno), pf_paralelo=pf_par)
 
 

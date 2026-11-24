@@ -388,6 +388,8 @@ def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False, t
     # Sem Drive, o caminho no Y: fica nas anotacoes.
     if link and str(link).startswith('http'):
         dados['Link da petição pronta'] = link
+        # a API publica nao faz upload, mas o campo de anexo guarda o link do arquivo (24/11/2026)
+        dados['Anexe a petição'] = link
     dados = {k: v for k, v in dados.items() if v}
     card = achar_card(I, pid, fases, p['processo'], it.get('data'))
 
@@ -412,6 +414,10 @@ def atualizar_infinitum(p, link, caminho_y, resumo, tipo=None, sem_peca=False, t
     try:
         return gravar(dados)
     except Exception as e:
+        if 'Anexe a petição' in dados:                          # anexo recusado: fica so o link e o texto
+            log.warning('Infinitum recusou o link no campo de anexo (%s); vai so no link e nas anotacoes', e)
+            dados.pop('Anexe a petição')
+            return gravar(dados)
         if 'Link da petição pronta' in dados and not link:      # caminho de arquivo recusado como URL
             log.warning('Infinitum recusou o link file:// (%s); vai so nas anotacoes', e)
             dados.pop('Link da petição pronta')
@@ -470,7 +476,52 @@ def _analise(m, acao, motivo):
         linhas.append('Providência: %s' % conf['providencia'])
     if m.get('avisos'):
         linhas.append('Avisos: %s' % '; '.join(m['avisos'][:6]))
-    return '\n'.join(linhas)[:3500]
+    linhas += _prazos_e_tarefas(m)
+    return '\n'.join(linhas)[:6000]
+
+
+_FONTE = {'tabela': 'prazo da lei (catálogo de atos)', 'despacho': 'prazo dado no despacho', 'sessao': 'data da sessão',
+          'audiencia': 'data da audiência'}
+
+
+def _prazos_e_tarefas(m):
+    """Observacoes do card (a equipe, 24/11/2026): cada prazo com dias, contagem, de onde veio e se e FATAL, o
+    prazo interno que data as tarefas, e as guias/deposito recursal quando o recurso tem preparo."""
+    prazos = [p for p in (m.get('prazos') or []) if p.get('vencimento')]
+    if not prazos:
+        return []
+    out = ['', 'PRAZOS E TAREFAS']
+    for p in prazos:
+        dias = ('%s dias %s' % (p['dias'], 'úteis' if (p.get('contagem') or 'uteis') == 'uteis' else 'corridos')) \
+            if p.get('dias') else '-'
+        out.append('- %s%s: %s, %s | %s | vence %s | prazo interno %s'
+                   % (p.get('ato'), ' (em paralelo)' if p.get('paralelo') else '', dias,
+                      _FONTE.get(p.get('fonte_prazo'), p.get('fonte_prazo') or '-'),
+                      'FATAL (perdeu, precluiu)' if p.get('fatal') else 'não fatal',
+                      _br_data(p.get('vencimento')), _br_data(p.get('prazo_fatal_interno'))))
+    try:
+        from app import motor_tarefas as MT
+        from datetime import date as _d
+        p0 = next((p for p in prazos if not p.get('paralelo')), prazos[0])
+        curto = min((p.get('prazo_fatal_interno') for p in prazos if p.get('prazo_fatal_interno')), default=None)
+        g = MT.etapa_de_preparo(m.get('ato') or '', m.get('ramo') or '', m.get('nosso_polo'), MT._data(p0.get('vencimento')),
+                                MT._data(p0.get('prazo_fatal_interno')), _d.today(), limite=MT._data(curto))
+        if g:
+            out.append('- %s: prazo interno %s%s. %s' % (g['rotulo'], _br_data(g['data']),
+                                                         ' (conferir se se aplica)' if g.get('condicional') else '',
+                                                         g['texto'].split(' Pagar e comprovar')[0]))
+    except Exception as e:
+        log.warning('guias no card: %s', e)
+    out.append('Como ler: o vencimento é o prazo processual (o fatal). O prazo interno é 2 dias úteis antes e é a data '
+               'em que o escritório trabalha: peça, revisão, ajustes, guias e protocolo são datados por ele. Prazos e '
+               'contagens de cada ato ficam no catálogo de atos do sistema (catalogo_atos.json); o prazo dado no '
+               'despacho prevalece quando o ato não tem prazo de lei.')
+    return out
+
+
+def _br_data(d):
+    d = str(d or '')[:10]
+    return '%s/%s/%s' % (d[8:10], d[5:7], d[:4]) if re.match(r'\d{4}-\d{2}-\d{2}', d) else '-'
 
 
 def garantir_card(c, it, m, acao, motivo):

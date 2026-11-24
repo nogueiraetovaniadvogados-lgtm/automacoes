@@ -540,7 +540,7 @@ def classificar(intimacao: dict, titularidade: dict | None = None) -> dict:
     # plataforma virava vencimento numa publicacao que so avisava a
     # distribuicao do processo.
     _e_ciencia = cfg.get('trilha') == 'CIENCIA'
-    if dias_despacho is None and not _e_ciencia and not sigiloso:
+    if dias_despacho is None and not _e_ciencia and not sigiloso and not sessao:
         dias_despacho = intimacao.get('prazo_dias')
         if dias_despacho:
             avisos.append('Prazo nao lido no texto; usado o prazo_dias generico do SYNC (%s) — conferir' % dias_despacho)
